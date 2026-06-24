@@ -153,8 +153,8 @@
 - [x] Unique indexes
 - [x] Multi-column indexes
 - [x] Index-only scans
-- [ ] Index skip scans
-- [ ] Deduplicate items (btree dedup)
+- [x] Index skip scans
+- [x] Deduplicate items (btree dedup)
 
 ### 5.2 Hash Indexes
 - [ ] Hash index creation and maintenance

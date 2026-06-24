@@ -253,6 +253,153 @@ impl SharedBufferCache {
     pub fn invalidate_page(&self, page_id: crate::types::PageId) {
         self.pool.invalidate_page(page_id);
     }
+
+    /// Read a page directly from storage WITHOUT loading it into the shared buffer pool.
+    ///
+    /// This is the "ring buffer" / double-buffering strategy for sequential scans:
+    /// large sequential reads should not pollute the buffer cache used by OLTP workloads.
+    /// Callers read pages one at a time and discard them after use.
+    pub fn scan_read_page(&self, page_id: crate::types::PageId) -> anyhow::Result<Vec<u8>> {
+        self.storage.read_page(page_id)
+    }
+
+    /// Flush all dirty pages in the buffer pool to storage.
+    /// Returns the number of pages flushed.
+    pub fn flush_dirty_pages(&self) -> anyhow::Result<u64> {
+        let map = self.pool.page_map.lock().clone();
+        let mut flushed = 0u64;
+        for (page_id, _) in &map {
+            let buffers = self.pool.buffers.lock();
+            let dirty = map.get(page_id).map(|&idx| buffers[idx].is_dirty).unwrap_or(false);
+            drop(buffers);
+            if dirty {
+                self.pool.flush_page(&*self.storage, *page_id)?;
+                flushed += 1;
+            }
+        }
+        Ok(flushed)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Background Writer (bgwriter)
+// ---------------------------------------------------------------------------
+
+/// BgWriter periodically flushes dirty buffers from the shared pool to storage
+/// so that checkpoints have less work to do and don't cause I/O spikes.
+///
+/// Usage: call `BgWriter::start(cache, interval_ms)` to spawn the background task.
+pub struct BgWriter;
+
+impl BgWriter {
+    /// Spawn a background Tokio task that flushes dirty pages every `interval_ms` milliseconds.
+    /// Returns a `tokio::task::JoinHandle` that can be aborted to stop the writer.
+    pub fn start(
+        cache: Arc<SharedBufferCache>,
+        interval_ms: u64,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_millis(interval_ms);
+            loop {
+                tokio::time::sleep(interval).await;
+                match cache.flush_dirty_pages() {
+                    Ok(n) if n > 0 => {
+                        tracing::debug!("[bgwriter] flushed {} dirty pages", n);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("[bgwriter] flush error: {}", e);
+                    }
+                }
+            }
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint
+// ---------------------------------------------------------------------------
+
+/// Tracks the LSN of the most recent successful checkpoint.
+pub struct CheckpointState {
+    pub redo_lsn: std::sync::atomic::AtomicU64,
+}
+
+impl CheckpointState {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            redo_lsn: std::sync::atomic::AtomicU64::new(0),
+        })
+    }
+
+    pub fn get_redo_lsn(&self) -> u64 {
+        self.redo_lsn.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+impl Default for CheckpointState {
+    fn default() -> Self {
+        Self { redo_lsn: std::sync::atomic::AtomicU64::new(0) }
+    }
+}
+
+/// Checkpointer drives periodic checkpoints: flush all dirty pages to storage
+/// and record a redo LSN so WAL replay can start from that point after a crash.
+pub struct Checkpointer {
+    cache: Arc<SharedBufferCache>,
+    wal: Arc<crate::wal::WAL>,
+    state: Arc<CheckpointState>,
+}
+
+impl Checkpointer {
+    pub fn new(
+        cache: Arc<SharedBufferCache>,
+        wal: Arc<crate::wal::WAL>,
+    ) -> (Self, Arc<CheckpointState>) {
+        let state = CheckpointState::new();
+        (
+            Self { cache, wal, state: Arc::clone(&state) },
+            state,
+        )
+    }
+
+    /// Perform a synchronous checkpoint:
+    /// 1. Flush all dirty buffer pages to storage.
+    /// 2. Flush the WAL to make the data durable.
+    /// 3. Record the current WAL LSN as the new redo point.
+    pub async fn do_checkpoint(&self) -> anyhow::Result<u64> {
+        // Phase 1: flush dirty pages
+        let pages_flushed = self.cache.flush_dirty_pages()?;
+
+        // Phase 2: flush WAL
+        self.wal.flush().await?;
+
+        // Phase 3: record new redo LSN
+        let lsn = self.wal.get_flushed_lsn().await;
+        self.state.redo_lsn.store(lsn, std::sync::atomic::Ordering::Release);
+
+        tracing::info!(
+            "[checkpoint] flushed {} pages, redo_lsn={}",
+            pages_flushed,
+            lsn
+        );
+        Ok(lsn)
+    }
+
+    /// Spawn a background Tokio task that triggers checkpoints every `interval_ms` ms.
+    pub fn start_periodic(self, interval_ms: u64) -> tokio::task::JoinHandle<()> {
+        let checkpointer = Arc::new(self);
+        tokio::spawn(async move {
+            let interval = std::time::Duration::from_millis(interval_ms);
+            loop {
+                tokio::time::sleep(interval).await;
+                match checkpointer.do_checkpoint().await {
+                    Ok(lsn) => tracing::debug!("[checkpoint] completed at lsn={}", lsn),
+                    Err(e) => tracing::warn!("[checkpoint] error: {}", e),
+                }
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -361,5 +508,80 @@ mod tests {
         let info = pool.inspect();
         assert_eq!(info.len(), 1);
         assert!(info[0].contains("Page(1)"));
+    }
+
+    // --- SharedBufferCache tests ---
+
+    fn make_cache() -> Arc<SharedBufferCache> {
+        Arc::new(SharedBufferCache::new(Arc::new(EphemeralStorage::new())))
+    }
+
+    #[test]
+    fn test_scan_read_page_bypasses_pool() {
+        // Write a page to storage, then read it via scan_read_page.
+        // The buffer pool should remain empty (page not cached).
+        let cache = make_cache();
+        let data = vec![42u8; 8192];
+        cache.storage.write_page(PageId(7), &data).unwrap();
+
+        let result = cache.scan_read_page(PageId(7)).unwrap();
+        assert_eq!(result[0], 42);
+
+        // Pool should NOT have loaded page 7
+        let map = cache.pool.page_map.lock();
+        assert!(!map.contains_key(&PageId(7)));
+    }
+
+    #[test]
+    fn test_flush_dirty_pages() {
+        let cache = make_cache();
+        // Fetch two pages and mark them dirty
+        cache.pool.fetch_page(&*cache.storage, PageId(1)).unwrap();
+        cache.pool.unpin_page(PageId(1), true);
+        cache.pool.fetch_page(&*cache.storage, PageId(2)).unwrap();
+        cache.pool.unpin_page(PageId(2), true);
+        assert_eq!(cache.pool.dirty_count(), 2);
+
+        let flushed = cache.flush_dirty_pages().unwrap();
+        assert_eq!(flushed, 2);
+        assert_eq!(cache.pool.dirty_count(), 0);
+    }
+
+    #[test]
+    fn test_invalidate_page_removes_from_pool() {
+        let cache = make_cache();
+        cache.pool.fetch_page(&*cache.storage, PageId(3)).unwrap();
+        {
+            let map = cache.pool.page_map.lock();
+            assert!(map.contains_key(&PageId(3)));
+        }
+        cache.invalidate_page(PageId(3));
+        {
+            let map = cache.pool.page_map.lock();
+            assert!(!map.contains_key(&PageId(3)));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_checkpoint_flushes_pages_and_updates_lsn() {
+        use crate::wal::WAL;
+
+        let wal = Arc::new(WAL::new(65536));
+
+        // Write a WAL record to advance the LSN
+        let lsn = wal.append(&crate::wal::WALRecord::Begin { xid: 1 }).await.unwrap();
+
+        let cache = make_cache();
+        // Dirty up a page
+        cache.pool.fetch_page(&*cache.storage, PageId(5)).unwrap();
+        cache.pool.unpin_page(PageId(5), true);
+        assert_eq!(cache.pool.dirty_count(), 1);
+
+        let (checkpointer, state) = Checkpointer::new(cache, Arc::clone(&wal));
+        let redo_lsn = checkpointer.do_checkpoint().await.unwrap();
+
+        // LSN should match the flushed WAL lsn (lsn + 1 because flush advances to current)
+        assert_eq!(redo_lsn, lsn + 1);
+        assert_eq!(state.get_redo_lsn(), lsn + 1);
     }
 }
