@@ -4,6 +4,54 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use parking_lot::Mutex;
 
+pub struct SeqScanRing {
+    pages: Vec<Option<(PageId, Vec<u8>)>>,
+    head: usize,
+    capacity: usize,
+}
+
+impl SeqScanRing {
+    pub fn new(capacity: usize) -> Self {
+        let mut pages = Vec::with_capacity(capacity);
+        for _ in 0..capacity {
+            pages.push(None);
+        }
+        Self {
+            pages,
+            head: 0,
+            capacity,
+        }
+    }
+
+    pub fn next_page(&mut self, storage: &dyn StorageTrait, page_id: PageId) -> anyhow::Result<Vec<u8>> {
+        let slot = self.head % self.capacity;
+
+        if let Some((cached_id, ref cached_data)) = self.pages[slot] {
+            if cached_id == page_id {
+                let data = cached_data.clone();
+                self.head += 1;
+                return Ok(data);
+            }
+        }
+
+        let data = storage.read_page(page_id)?;
+        self.pages[slot] = Some((page_id, data.clone()));
+        self.head += 1;
+        Ok(data)
+    }
+
+    pub fn reset(&mut self) {
+        for slot in self.pages.iter_mut() {
+            *slot = None;
+        }
+        self.head = 0;
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+}
+
 pub struct Buffer {
     pub page_id: PageId,
     pub data: Vec<u8>,
@@ -285,30 +333,82 @@ impl SharedBufferCache {
 // Background Writer (bgwriter)
 // ---------------------------------------------------------------------------
 
-/// BgWriter periodically flushes dirty buffers from the shared pool to storage
-/// so that checkpoints have less work to do and don't cause I/O spikes.
-///
-/// Usage: call `BgWriter::start(cache, interval_ms)` to spawn the background task.
-pub struct BgWriter;
+#[derive(Debug, Clone)]
+pub struct BgWriterConfig {
+    pub lru_multiplier: f64,
+    pub flush_after: usize,
+    pub delay_ms: u64,
+    pub max_written: usize,
+}
+
+impl Default for BgWriterConfig {
+    fn default() -> Self {
+        Self {
+            lru_multiplier: 2.0,
+            flush_after: 512 * 1024,
+            delay_ms: 200,
+            max_written: 128,
+        }
+    }
+}
+
+pub struct BgWriter {
+    config: BgWriterConfig,
+    newly_dirtied: parking_lot::Mutex<usize>,
+    bytes_written: parking_lot::Mutex<usize>,
+}
 
 impl BgWriter {
-    /// Spawn a background Tokio task that flushes dirty pages every `interval_ms` milliseconds.
-    /// Returns a `tokio::task::JoinHandle` that can be aborted to stop the writer.
+    pub fn new(config: BgWriterConfig) -> Self {
+        Self {
+            config,
+            newly_dirtied: parking_lot::Mutex::new(0),
+            bytes_written: parking_lot::Mutex::new(0),
+        }
+    }
+
+    pub fn notify_dirty(&self) {
+        *self.newly_dirtied.lock() += 1;
+    }
+
     pub fn start(
         cache: Arc<SharedBufferCache>,
-        interval_ms: u64,
+        config: BgWriterConfig,
     ) -> tokio::task::JoinHandle<()> {
+        let bgwriter = Arc::new(Self::new(config.clone()));
         tokio::spawn(async move {
-            let interval = std::time::Duration::from_millis(interval_ms);
+            let interval = std::time::Duration::from_millis(config.delay_ms);
             loop {
                 tokio::time::sleep(interval).await;
+
+                let target = {
+                    let mut nd = bgwriter.newly_dirtied.lock();
+                    let target = (*nd as f64 * config.lru_multiplier) as usize;
+                    *nd = 0;
+                    target.min(config.max_written)
+                };
+
+                if target == 0 {
+                    continue;
+                }
+
                 match cache.flush_dirty_pages() {
-                    Ok(n) if n > 0 => {
-                        tracing::debug!("[bgwriter] flushed {} dirty pages", n);
+                    Ok(n) => {
+                        *bgwriter.bytes_written.lock() += n as usize * 8192;
+                        if n > 0 {
+                            tracing::debug!("[bgwriter] flushed {} dirty pages (target={})", n, target);
+                        }
                     }
-                    Ok(_) => {}
                     Err(e) => {
                         tracing::warn!("[bgwriter] flush error: {}", e);
+                    }
+                }
+
+                let bytes = *bgwriter.bytes_written.lock();
+                if bytes >= config.flush_after {
+                    *bgwriter.bytes_written.lock() = 0;
+                    if let Err(e) = cache.storage.sync_all() {
+                        tracing::warn!("[bgwriter] sync error: {}", e);
                     }
                 }
             }
