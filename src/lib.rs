@@ -7,6 +7,7 @@ pub mod executor;
 pub mod protocol;
 pub mod btree;
 pub mod transaction;
+pub mod sql;
 pub mod suiteshell;
 pub mod server;
 pub mod error;

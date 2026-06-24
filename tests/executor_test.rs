@@ -204,13 +204,15 @@ fn test_parser_empty_input() {
 #[test]
 fn test_parser_select_star() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, SelectItem};
     let mut parser = Parser::new();
     let q = parser.feed(b"SELECT * FROM users;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Select { table, where_clause, columns }) = q {
-        assert!(matches!(table, Oid(_)));
-        assert!(where_clause.is_none());
-        assert!(columns.is_empty());
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Select(sel))) = q {
+        assert!(sel.from.is_some());
+        assert!(sel.where_clause.is_none());
+        assert_eq!(sel.select_list.len(), 1);
+        assert!(matches!(sel.select_list[0], SelectItem::Star));
     } else {
         panic!("Expected Select query");
     }
@@ -219,12 +221,13 @@ fn test_parser_select_star() {
 #[test]
 fn test_parser_select_with_where() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"SELECT * FROM users WHERE id = 1;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Select { table, where_clause, .. }) = q {
-        assert!(matches!(table, Oid(_)));
-        assert!(where_clause.is_some());
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Select(sel))) = q {
+        assert!(sel.from.is_some());
+        assert!(sel.where_clause.is_some());
     } else {
         panic!("Expected Select query");
     }
@@ -233,13 +236,20 @@ fn test_parser_select_with_where() {
 #[test]
 fn test_parser_select_columns() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, SelectItem};
     let mut parser = Parser::new();
     let q = parser.feed(b"SELECT name, age FROM users;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Select { columns, .. }) = q {
-        assert_eq!(columns.len(), 2);
-        assert_eq!(columns[0], "NAME");
-        assert_eq!(columns[1], "AGE");
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Select(sel))) = q {
+        assert_eq!(sel.select_list.len(), 2);
+        match &sel.select_list[0] {
+            SelectItem::Expr(expr) => assert_eq!(format!("{:?}", expr), "Identifier(\"name\")"),
+            _ => panic!("Expected identifier"),
+        }
+        match &sel.select_list[1] {
+            SelectItem::Expr(expr) => assert_eq!(format!("{:?}", expr), "Identifier(\"age\")"),
+            _ => panic!("Expected identifier"),
+        }
     } else {
         panic!("Expected Select query");
     }
@@ -248,12 +258,13 @@ fn test_parser_select_columns() {
 #[test]
 fn test_parser_insert() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, InsertSource};
     let mut parser = Parser::new();
     let q = parser.feed(b"INSERT INTO users VALUES (1, 'alice');\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Insert { table, values }) = q {
-        assert!(matches!(table, Oid(_)));
-        assert_eq!(values.len(), 2);
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Insert(ins))) = q {
+        assert_eq!(ins.table.parts, vec!["users"]);
+        assert!(matches!(ins.source, InsertSource::Values(_)));
     } else {
         panic!("Expected Insert query");
     }
@@ -262,12 +273,13 @@ fn test_parser_insert() {
 #[test]
 fn test_parser_create_table() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE TABLE users (id INT, name TEXT);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::CreateTable { name, columns }) = q {
-        assert_eq!(name, "USERS");
-        assert_eq!(columns.len(), 2);
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateTable(create))) = q {
+        assert_eq!(create.table.parts, vec!["users"]);
+        assert_eq!(create.columns.len(), 2);
     } else {
         panic!("Expected CreateTable query");
     }
@@ -276,14 +288,14 @@ fn test_parser_create_table() {
 #[test]
 fn test_parser_create_table_with_types() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::types::Oid;
+    use postgress_rs::sql::ast::{Statement, DataType};
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE TABLE t (a INT, b TEXT, c BOOL);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::CreateTable { columns, .. }) = q {
-        assert_eq!(columns[0].1, Oid(23)); // INT
-        assert_eq!(columns[1].1, Oid(25)); // TEXT
-        assert_eq!(columns[2].1, Oid(16)); // BOOL
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateTable(create))) = q {
+        assert!(matches!(create.columns[0].data_type, DataType::Int));
+        assert!(matches!(create.columns[1].data_type, DataType::Text));
+        assert!(matches!(create.columns[2].data_type, DataType::Boolean));
     } else {
         panic!("Expected CreateTable query");
     }
@@ -292,11 +304,12 @@ fn test_parser_create_table_with_types() {
 #[test]
 fn test_parser_drop_table() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"DROP TABLE users;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::DropTable { name }) = q {
-        assert_eq!(name, "USERS");
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::DropTable(drop))) = q {
+        assert_eq!(drop.table.parts, vec!["users"]);
     } else {
         panic!("Expected DropTable query");
     }
@@ -305,14 +318,16 @@ fn test_parser_drop_table() {
 #[test]
 fn test_parser_update() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, Expr, Literal};
     let mut parser = Parser::new();
     let q = parser.feed(b"UPDATE users SET name = 'bob' WHERE id = 1;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Update { table, column, value, where_clause }) = q {
-        assert!(matches!(table, Oid(_)));
-        assert_eq!(column, "NAME");
-        assert_eq!(value, b"BOB");
-        assert!(where_clause.is_some());
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Update(update))) = q {
+        assert_eq!(update.table.parts, vec!["users"]);
+        assert_eq!(update.set_clauses.len(), 1);
+        assert_eq!(update.set_clauses[0].column, "name");
+        assert!(matches!(*update.set_clauses[0].value, Expr::Literal(Literal::String(_))));
+        assert!(update.where_clause.is_some());
     } else {
         panic!("Expected Update query");
     }
@@ -321,11 +336,12 @@ fn test_parser_update() {
 #[test]
 fn test_parser_update_without_where() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"UPDATE users SET name = 'bob';\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Update { where_clause, .. }) = q {
-        assert!(where_clause.is_none());
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Update(update))) = q {
+        assert!(update.where_clause.is_none());
     } else {
         panic!("Expected Update query");
     }
@@ -334,12 +350,13 @@ fn test_parser_update_without_where() {
 #[test]
 fn test_parser_delete() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"DELETE FROM users WHERE id = 1;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Delete { table, where_clause }) = q {
-        assert!(matches!(table, Oid(_)));
-        assert!(where_clause.is_some());
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Delete(del))) = q {
+        assert_eq!(del.table.parts, vec!["users"]);
+        assert!(del.where_clause.is_some());
     } else {
         panic!("Expected Delete query");
     }
@@ -348,11 +365,12 @@ fn test_parser_delete() {
 #[test]
 fn test_parser_delete_without_where() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"DELETE FROM users;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Delete { where_clause, .. }) = q {
-        assert!(where_clause.is_none());
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Delete(del))) = q {
+        assert!(del.where_clause.is_none());
     } else {
         panic!("Expected Delete query");
     }
@@ -361,28 +379,31 @@ fn test_parser_delete_without_where() {
 #[test]
 fn test_parser_begin() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"BEGIN;\n");
     assert!(q.is_some());
-    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Begin { .. }));
+    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Statement(Statement::Begin(_))));
 }
 
 #[test]
 fn test_parser_commit() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"COMMIT;\n");
     assert!(q.is_some());
-    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Commit));
+    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Statement(Statement::Commit)));
 }
 
 #[test]
 fn test_parser_rollback() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"ROLLBACK;\n");
     assert!(q.is_some());
-    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Rollback));
+    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Statement(Statement::Rollback)));
 }
 
 #[test]
@@ -408,11 +429,12 @@ fn test_parser_unknown_statement() {
 #[test]
 fn test_parser_select_with_integer_where() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"SELECT * FROM users WHERE id = 42;\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Select { where_clause, .. }) = q {
-        assert!(where_clause.unwrap().contains("42"));
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Select(sel))) = q {
+        assert!(sel.where_clause.is_some());
     } else {
         panic!("Expected Select query");
     }
@@ -421,11 +443,17 @@ fn test_parser_select_with_integer_where() {
 #[test]
 fn test_parser_insert_multiple_values() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
     let mut parser = Parser::new();
     let q = parser.feed(b"INSERT INTO users VALUES (1, 'alice', 'admin');\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Insert { values, .. }) = q {
-        assert_eq!(values.len(), 3);
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Insert(ins))) = q {
+        if let postgress_rs::sql::ast::InsertSource::Values(rows) = &ins.source {
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].len(), 3);
+        } else {
+            panic!("Expected Values source");
+        }
     } else {
         panic!("Expected Insert query");
     }
@@ -434,14 +462,20 @@ fn test_parser_insert_multiple_values() {
 #[test]
 fn test_parser_insert_numeric_values() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, InsertSource, Expr, Literal};
     let mut parser = Parser::new();
     let q = parser.feed(b"INSERT INTO users VALUES (1, 2, 3);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Insert { values, .. }) = q {
-        assert_eq!(values.len(), 3);
-        assert_eq!(values[0], b"1");
-        assert_eq!(values[1], b"2");
-        assert_eq!(values[2], b"3");
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::Insert(ins))) = q {
+        if let InsertSource::Values(rows) = &ins.source {
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].len(), 3);
+            assert!(matches!(&rows[0][0], Expr::Literal(Literal::Number(n)) if n == "1"));
+            assert!(matches!(&rows[0][1], Expr::Literal(Literal::Number(n)) if n == "2"));
+            assert!(matches!(&rows[0][2], Expr::Literal(Literal::Number(n)) if n == "3"));
+        } else {
+            panic!("Expected Values source");
+        }
     } else {
         panic!("Expected Insert query");
     }
@@ -450,13 +484,15 @@ fn test_parser_insert_numeric_values() {
 #[test]
 fn test_parser_create_index() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, Expr};
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE INDEX idx_users_id ON users (id);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::CreateIndex { name, table, column }) = q {
-        assert_eq!(name, "IDX_USERS_ID");
-        assert_eq!(table, "USERS");
-        assert_eq!(column, "ID");
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateIndex(create))) = q {
+        assert_eq!(create.name.parts, vec!["idx_users_id"]);
+        assert_eq!(create.table.parts, vec!["users"]);
+        assert_eq!(create.columns.len(), 1);
+        assert!(matches!(&create.columns[0].expr, Expr::Identifier(id) if id == "id"));
     } else {
         panic!("Expected CreateIndex query");
     }
@@ -465,13 +501,15 @@ fn test_parser_create_index() {
 #[test]
 fn test_parser_create_index_multiple_words() {
     use postgress_rs::protocol::parser::Parser;
+    use postgress_rs::sql::ast::{Statement, Expr};
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE INDEX idx_orders_customer ON orders (customer_id);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::CreateIndex { name, table, column }) = q {
-        assert_eq!(name, "IDX_ORDERS_CUSTOMER");
-        assert_eq!(table, "ORDERS");
-        assert_eq!(column, "CUSTOMER_ID");
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateIndex(create))) = q {
+        assert_eq!(create.name.parts, vec!["idx_orders_customer"]);
+        assert_eq!(create.table.parts, vec!["orders"]);
+        assert_eq!(create.columns.len(), 1);
+        assert!(matches!(&create.columns[0].expr, Expr::Identifier(id) if id == "customer_id"));
     } else {
         panic!("Expected CreateIndex query");
     }

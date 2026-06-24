@@ -21,12 +21,11 @@ impl Parser {
         self.buffer.extend_from_slice(data);
         if let Some(pos) = self.buffer.iter().position(|&b| b == b'\n' || b == b';') {
             let line = self.buffer.drain(..=pos).collect::<Vec<u8>>();
-            let s = String::from_utf8_lossy(&line).trim().to_uppercase();
+            let s = String::from_utf8_lossy(&line).trim().to_string();
             if s.is_empty() {
                 return None;
             }
             self.buffer.clear();
-            self.buffer.extend_from_slice(&line);
             return parse_query(&s);
         }
         None
@@ -38,25 +37,38 @@ fn parse_query(s: &str) -> Option<Query> {
     if s.is_empty() {
         return None;
     }
-    if s.starts_with("BEGIN") || s.starts_with("START TRANSACTION") {
+
+    // Try to parse with the new SQL parser first
+    match crate::sql::parser::Parser::parse(s) {
+        Ok(stmt) => Some(Query::from_statement(stmt)),
+        Err(_) => {
+            // Fall back to the old simple parser for backward compatibility
+            parse_query_legacy(s)
+        }
+    }
+}
+
+fn parse_query_legacy(s: &str) -> Option<Query> {
+    let s_upper = s.trim().trim_end_matches(';').trim().to_uppercase();
+    if s_upper.starts_with("BEGIN") || s_upper.starts_with("START TRANSACTION") {
         return Some(Query::Begin { mode: None });
-    } else if s.starts_with("COMMIT") {
+    } else if s_upper.starts_with("COMMIT") {
         return Some(Query::Commit);
-    } else if s.starts_with("ROLLBACK") || s.starts_with("ABORT") {
+    } else if s_upper.starts_with("ROLLBACK") || s_upper.starts_with("ABORT") {
         return Some(Query::Rollback);
-    } else if s.starts_with("SELECT") {
+    } else if s_upper.starts_with("SELECT") {
         parse_select(s)
-    } else if s.starts_with("INSERT") {
+    } else if s_upper.starts_with("INSERT") {
         parse_insert(s)
-    } else if s.starts_with("UPDATE") {
+    } else if s_upper.starts_with("UPDATE") {
         parse_update(s)
-    } else if s.starts_with("DELETE") {
+    } else if s_upper.starts_with("DELETE") {
         parse_delete(s)
-    } else if s.starts_with("CREATE TABLE") {
+    } else if s_upper.starts_with("CREATE TABLE") {
         parse_create_table(s)
-    } else if s.starts_with("DROP TABLE") {
+    } else if s_upper.starts_with("DROP TABLE") {
         parse_drop_table(s)
-    } else if s.starts_with("CREATE INDEX") {
+    } else if s_upper.starts_with("CREATE INDEX") {
         parse_create_index(s)
     } else {
         None
@@ -64,22 +76,25 @@ fn parse_query(s: &str) -> Option<Query> {
 }
 
 fn parse_select(s: &str) -> Option<Query> {
-    let after_select = s.strip_prefix("SELECT")?.trim();
+    let s_upper = s.to_uppercase();
+    let select_pos = s_upper.find("SELECT")?;
+    let after_select = s[select_pos + 6..].trim();
     
-    let (columns, table_and_where) = if after_select.starts_with('*') {
+    let (columns, table_and_where) = if after_select.starts_with('*') || after_select.to_uppercase().starts_with("*") {
         let after_star = after_select[1..].trim();
-        let after_from = after_star.strip_prefix("FROM")?;
-        (vec![], after_from.trim())
+        let after_star_upper = after_star.to_uppercase();
+        let from_pos = after_star_upper.find("FROM")?;
+        let after_from = after_star[from_pos + 4..].trim();
+        (vec![], after_from)
     } else {
-        let parts: Vec<&str> = after_select.splitn(2, "FROM").collect();
-        if parts.len() < 2 {
-            return None;
-        }
-        let cols = parts[0].trim().split(',').map(|s| s.trim().to_string()).collect();
-        (cols, parts[1].trim())
+        let from_pos = s_upper.find("FROM")?;
+        let cols_str = s[select_pos + 6..from_pos].trim();
+        let cols = cols_str.split(',').map(|s| s.trim().to_string()).collect();
+        (cols, s[from_pos + 4..].trim())
     };
 
-    let (table_name, where_clause) = if let Some(idx) = table_and_where.find("WHERE") {
+    let table_and_where_upper = table_and_where.to_uppercase();
+    let (table_name, where_clause) = if let Some(idx) = table_and_where_upper.find("WHERE") {
         let table = table_and_where[..idx].trim().to_string();
         let where_part = table_and_where[idx..].trim().to_string();
         (table, Some(where_part))
@@ -96,8 +111,12 @@ fn parse_select(s: &str) -> Option<Query> {
 }
 
 fn parse_insert(s: &str) -> Option<Query> {
-    let after_insert = s.strip_prefix("INSERT")?.trim();
-    let after_into = after_insert.strip_prefix("INTO")?.trim();
+    let s_upper = s.to_uppercase();
+    let insert_pos = s_upper.find("INSERT")?;
+    let after_insert = s[insert_pos + 6..].trim();
+    let after_insert_upper = after_insert.to_uppercase();
+    let into_pos = after_insert_upper.find("INTO")?;
+    let after_into = after_insert[into_pos + 4..].trim();
     let parts: Vec<&str> = after_into.splitn(2, "VALUES").collect();
     if parts.len() < 2 {
         return None;
@@ -114,7 +133,8 @@ fn parse_insert(s: &str) -> Option<Query> {
 }
 
 fn parse_create_table(s: &str) -> Option<Query> {
-    let after_create = s.strip_prefix("CREATE TABLE")?.trim();
+    let s_upper = s.to_uppercase();
+    let after_create = s[s_upper.find("CREATE TABLE")? + 12..].trim();
     let name_end = after_create.find('(')?;
     let table_name = after_create[..name_end].trim().to_string();
     let cols_str = &after_create[name_end..];
@@ -140,14 +160,15 @@ fn parse_create_table(s: &str) -> Option<Query> {
 }
 
 fn parse_drop_table(s: &str) -> Option<Query> {
-    let after_drop = s.strip_prefix("DROP TABLE")?.trim();
+    let s_upper = s.to_uppercase();
+    let after_drop = s[s_upper.find("DROP TABLE")? + 10..].trim();
     let table_name = after_drop.trim().trim_end_matches(';').trim().to_string();
     Some(Query::DropTable { name: table_name })
 }
 
 fn parse_create_index(s: &str) -> Option<Query> {
-    // CREATE INDEX index_name ON table_name (column_name)
-    let after_index = s.strip_prefix("CREATE INDEX")?.trim();
+    let s_upper = s.to_uppercase();
+    let after_index = s[s_upper.find("CREATE INDEX")? + 12..].trim();
     let parts: Vec<&str> = after_index.splitn(2, "ON").collect();
     if parts.len() < 2 {
         return None;
@@ -167,8 +188,8 @@ fn parse_create_index(s: &str) -> Option<Query> {
 }
 
 fn parse_update(s: &str) -> Option<Query> {
-    // UPDATE table SET col = val WHERE cond
-    let after_update = s.strip_prefix("UPDATE")?.trim();
+    let s_upper = s.to_uppercase();
+    let after_update = s[s_upper.find("UPDATE")? + 6..].trim();
     let parts: Vec<&str> = after_update.splitn(2, "SET").collect();
     if parts.len() < 2 {
         return None;
@@ -176,13 +197,12 @@ fn parse_update(s: &str) -> Option<Query> {
     let table_name = parts[0].trim();
     let after_set = parts[1].trim();
     
-    let (set_part, where_part) = if let Some(idx) = after_set.find("WHERE") {
+    let (set_part, where_part) = if let Some(idx) = after_set.to_uppercase().find("WHERE") {
         (&after_set[..idx], Some(after_set[idx..].to_string()))
     } else {
         (after_set, None)
     };
     
-    // Parse SET column = value
     let set_parts: Vec<&str> = set_part.splitn(2, '=').collect();
     if set_parts.len() != 2 {
         return None;
@@ -199,10 +219,14 @@ fn parse_update(s: &str) -> Option<Query> {
 }
 
 fn parse_delete(s: &str) -> Option<Query> {
-    // DELETE FROM table WHERE cond
-    let after_delete = s.strip_prefix("DELETE")?.trim();
-    let after_from = after_delete.strip_prefix("FROM")?.trim();
-    let (table_name, where_part) = if let Some(idx) = after_from.find("WHERE") {
+    let s_upper = s.to_uppercase();
+    let delete_pos = s_upper.find("DELETE")?;
+    let after_delete = s[delete_pos + 6..].trim();
+    let after_delete_upper = after_delete.to_uppercase();
+    let from_pos = after_delete_upper.find("FROM")?;
+    let after_from = after_delete[from_pos + 4..].trim();
+    let after_from_upper = after_from.to_uppercase();
+    let (table_name, where_part) = if let Some(idx) = after_from_upper.find("WHERE") {
         (after_from[..idx].trim(), Some(after_from[idx..].trim().to_string()))
     } else {
         (after_from.trim(), None)
@@ -214,7 +238,7 @@ fn parse_delete(s: &str) -> Option<Query> {
     })
 }
 
-fn fnv_hash(data: &str) -> u32 {
+pub fn fnv_hash(data: &str) -> u32 {
     let mut hash: u32 = 2166136261;
     for b in data.bytes() {
         hash ^= b as u32;

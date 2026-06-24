@@ -8,6 +8,7 @@ pub struct TransactionId(pub u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IsolationLevel {
+    ReadUncommitted,
     ReadCommitted,
     RepeatableRead,
     Serializable,
@@ -97,7 +98,7 @@ impl TransactionManager {
 
         let snapshot = self.create_snapshot(xid);
         match isolation {
-            IsolationLevel::ReadCommitted => {}
+            IsolationLevel::ReadUncommitted | IsolationLevel::ReadCommitted => {}
             IsolationLevel::RepeatableRead | IsolationLevel::Serializable => {
                 txn.take_snapshot(snapshot);
             }

@@ -1,4 +1,5 @@
 use crate::types::Oid;
+use crate::sql::ast::Statement;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Query {
@@ -38,6 +39,15 @@ pub enum Query {
     },
     Commit,
     Rollback,
+    /// New AST-based query representation
+    Statement(Statement),
+}
+
+impl Query {
+    /// Create a Query from a parsed Statement
+    pub fn from_statement(stmt: Statement) -> Self {
+        Query::Statement(stmt)
+    }
 }
 
 #[derive(Debug)]
