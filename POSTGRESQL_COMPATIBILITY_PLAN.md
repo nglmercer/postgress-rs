@@ -157,8 +157,8 @@
 - [x] Deduplicate items (btree dedup)
 
 ### 5.2 Hash Indexes
-- [ ] Hash index creation and maintenance
-- [ ] Hash index scans
+- [x] Hash index creation and maintenance
+- [x] Hash index scans
 
 ### 5.3 GIN (Generalized Inverted Index)
 - [ ] GIN for array operations
