@@ -136,6 +136,51 @@ mod tests {
     }
 
     #[test]
+    fn test_evaluate_function_lower() {
+        let arg = Expr::Literal(Literal::String("HELLO".to_string()));
+        let func = Expr::Function(Box::new(crate::sql::ast::FunctionCall {
+            name: crate::sql::ast::ObjectName::new(vec!["LOWER".to_string()]),
+            args: vec![crate::sql::ast::FunctionArg::Expr(arg)],
+            filter: None,
+            over: None,
+        }));
+        let result = evaluate_expr(&func, &[], None);
+        assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_evaluate_function_trim() {
+        let arg = Expr::Literal(Literal::String("  hello  ".to_string()));
+        let func = Expr::Function(Box::new(crate::sql::ast::FunctionCall {
+            name: crate::sql::ast::ObjectName::new(vec!["TRIM".to_string()]),
+            args: vec![crate::sql::ast::FunctionArg::Expr(arg)],
+            filter: None,
+            over: None,
+        }));
+        let result = evaluate_expr(&func, &[], None);
+        assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[test]
+    fn test_evaluate_function_substring() {
+        let arg0 = Expr::Literal(Literal::String("hello".to_string()));
+        let arg1 = Expr::Literal(Literal::Number("2".to_string()));
+        let arg2 = Expr::Literal(Literal::Number("3".to_string()));
+        let func = Expr::Function(Box::new(crate::sql::ast::FunctionCall {
+            name: crate::sql::ast::ObjectName::new(vec!["SUBSTRING".to_string()]),
+            args: vec![
+                crate::sql::ast::FunctionArg::Expr(arg0),
+                crate::sql::ast::FunctionArg::Expr(arg1),
+                crate::sql::ast::FunctionArg::Expr(arg2),
+            ],
+            filter: None,
+            over: None,
+        }));
+        let result = evaluate_expr(&func, &[], None);
+        assert_eq!(result, Some("ell".to_string()));
+    }
+
+    #[test]
     fn test_evaluate_between() {
         let expr = Expr::Literal(Literal::Number("5".to_string()));
         let low = Expr::Literal(Literal::Number("1".to_string()));

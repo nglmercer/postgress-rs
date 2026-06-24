@@ -64,7 +64,7 @@
 
 ### 2.2 String Types
 - [x] `CHAR(n)`, `VARCHAR(n)`, `TEXT`
-- [ ] String functions: `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `SUBSTRING`, `CONCAT`
+- [x] String functions: `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `SUBSTRING`, `CONCAT`
 - [x] Pattern matching: `LIKE`, `ILIKE`, `SIMILAR TO`
 - [x] Regular expressions: `~`, `~*`, `!~`, `!~*`
 
@@ -150,9 +150,9 @@
 ## Milestone 5: Index Access Methods (M6 from ROADMAP)
 
 ### 5.1 B-tree Enhancements
-- [ ] Unique indexes
-- [ ] Multi-column indexes
-- [ ] Index-only scans
+- [x] Unique indexes
+- [x] Multi-column indexes
+- [x] Index-only scans
 - [ ] Index skip scans
 - [ ] Deduplicate items (btree dedup)
 
