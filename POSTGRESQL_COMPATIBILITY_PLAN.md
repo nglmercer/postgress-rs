@@ -189,10 +189,10 @@
 - [x] WindowAgg node (ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD)
 
 ### 6.2 Query Planner
-- [ ] Cost-based optimizer (CBO)
+- [x] Cost-based optimizer (CBO)
 - [x] Statistics collection (pg_statistic)
 - [x] Selectivity estimation
-- [ ] Join order optimization
+- [x] Join order optimization
 - [ ] Parallel query execution
 - [ ] JIT compilation
 
