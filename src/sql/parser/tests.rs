@@ -1,7 +1,5 @@
-#[cfg(test)]
-mod tests {
-    use crate::sql::parser::Parser;
-    use crate::sql::ast::*;
+use crate::sql::parser::Parser;
+use crate::sql::ast::*;
 
     #[test]
     fn test_simple_select() {
@@ -1619,4 +1617,556 @@ mod tests {
             _ => panic!("expected Update"),
         }
     }
-}
+
+
+    // Window Frame tests
+
+    #[test]
+    fn test_window_with_rows_frame() {
+        let stmt = Parser::parse(
+            "SELECT id, SUM(amount) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM orders"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 2);
+                match &sel.select_list[1] {
+                    SelectItem::Expr(Expr::Function(func)) => {
+                        assert!(func.over.is_some());
+                        let window = func.over.as_ref().unwrap();
+                        assert!(window.frame.is_some());
+                        let frame = window.frame.as_ref().unwrap();
+                        assert_eq!(*frame.start, FrameBound::UnboundedPreceding);
+                        assert_eq!(**frame.end.as_ref().unwrap(), FrameBound::CurrentRow);
+                    }
+                    other => panic!("expected Function, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_window_with_range_frame() {
+        let stmt = Parser::parse(
+            "SELECT id, AVG(price) OVER (ORDER BY created_at RANGE BETWEEN 1 PRECEDING AND CURRENT ROW) FROM products"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 2);
+                match &sel.select_list[1] {
+                    SelectItem::Expr(Expr::Function(func)) => {
+                        assert!(func.over.is_some());
+                        let window = func.over.as_ref().unwrap();
+                        assert!(window.frame.is_some());
+                    }
+                    other => panic!("expected Function, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_window_with_groups_frame() {
+        let stmt = Parser::parse(
+            "SELECT id, COUNT(*) OVER (ORDER BY salary GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM employees"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 2);
+                match &sel.select_list[1] {
+                    SelectItem::Expr(Expr::Function(func)) => {
+                        assert!(func.over.is_some());
+                        let window = func.over.as_ref().unwrap();
+                        assert!(window.frame.is_some());
+                    }
+                    other => panic!("expected Function, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_window_with_preceding_bound() {
+        let stmt = Parser::parse(
+            "SELECT id, SUM(amount) OVER (ORDER BY id ROWS 5 PRECEDING) FROM orders"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 2);
+                match &sel.select_list[1] {
+                    SelectItem::Expr(Expr::Function(func)) => {
+                        assert!(func.over.is_some());
+                        let window = func.over.as_ref().unwrap();
+                        assert!(window.frame.is_some());
+                        let frame = window.frame.as_ref().unwrap();
+                        match &*frame.start {
+                            FrameBound::Preceding(_) => {},
+                            other => panic!("expected Preceding, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected Function, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_window_with_following_bound() {
+        let stmt = Parser::parse(
+            "SELECT id, SUM(amount) OVER (ORDER BY id ROWS BETWEEN CURRENT ROW AND 10 FOLLOWING) FROM orders"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 2);
+                match &sel.select_list[1] {
+                    SelectItem::Expr(Expr::Function(func)) => {
+                        assert!(func.over.is_some());
+                        let window = func.over.as_ref().unwrap();
+                        assert!(window.frame.is_some());
+                        let frame = window.frame.as_ref().unwrap();
+                        assert_eq!(*frame.start, FrameBound::CurrentRow);
+                        match &**frame.end.as_ref().unwrap() {
+                            FrameBound::Following(_) => {},
+                            other => panic!("expected Following, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected Function, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    // CREATE SEQUENCE tests
+
+    #[test]
+    fn test_create_sequence_simple() {
+        let stmt = Parser::parse("CREATE SEQUENCE order_seq").unwrap();
+        match stmt {
+            Statement::CreateSequence(seq) => {
+                assert_eq!(seq.name.parts, vec!["order_seq"]);
+                assert!(!seq.if_not_exists);
+                assert!(seq.increment.is_none());
+                assert!(seq.min_value.is_none());
+                assert!(seq.max_value.is_none());
+                assert!(seq.start.is_none());
+                assert!(seq.cache.is_none());
+                assert!(!seq.cycle);
+            }
+            _ => panic!("expected CreateSequence"),
+        }
+    }
+
+    #[test]
+    fn test_create_sequence_with_options() {
+        let stmt = Parser::parse(
+            "CREATE SEQUENCE IF NOT EXISTS my_seq INCREMENT BY 5 MINVALUE 1 MAXVALUE 999999 START WITH 100 CACHE 10 CYCLE"
+        ).unwrap();
+        match stmt {
+            Statement::CreateSequence(seq) => {
+                assert_eq!(seq.name.parts, vec!["my_seq"]);
+                assert!(seq.if_not_exists);
+                assert_eq!(seq.increment, Some(5));
+                assert_eq!(seq.min_value, Some(1));
+                assert_eq!(seq.max_value, Some(999999));
+                assert_eq!(seq.start, Some(100));
+                assert_eq!(seq.cache, Some(10));
+                assert!(seq.cycle);
+            }
+            _ => panic!("expected CreateSequence"),
+        }
+    }
+
+    #[test]
+    fn test_create_sequence_with_no_cycle() {
+        let stmt = Parser::parse(
+            "CREATE SEQUENCE test_seq NO CYCLE NO MINVALUE NO MAXVALUE"
+        ).unwrap();
+        match stmt {
+            Statement::CreateSequence(seq) => {
+                assert_eq!(seq.name.parts, vec!["test_seq"]);
+                assert!(!seq.cycle);
+                assert!(seq.min_value.is_none());
+                assert!(seq.max_value.is_none());
+            }
+            _ => panic!("expected CreateSequence"),
+        }
+    }
+
+    #[test]
+    fn test_create_sequence_with_schema() {
+        let stmt = Parser::parse("CREATE SEQUENCE public.user_id_seq").unwrap();
+        match stmt {
+            Statement::CreateSequence(seq) => {
+                assert_eq!(seq.name.parts, vec!["public", "user_id_seq"]);
+            }
+            _ => panic!("expected CreateSequence"),
+        }
+    }
+
+    #[test]
+    fn test_create_sequence_with_owned_by() {
+        let stmt = Parser::parse("CREATE SEQUENCE test_seq OWNED BY users.id").unwrap();
+        match stmt {
+            Statement::CreateSequence(seq) => {
+                assert_eq!(seq.name.parts, vec!["test_seq"]);
+                assert!(seq.owned_by.is_some());
+                assert_eq!(seq.owned_by.unwrap().parts, vec!["users", "id"]);
+            }
+            _ => panic!("expected CreateSequence"),
+        }
+    }
+
+    // CREATE TYPE tests
+
+    #[test]
+    fn test_create_type_composite() {
+        let stmt = Parser::parse(
+            "CREATE TYPE address AS (street TEXT, city VARCHAR(100), zip_code CHAR(5))"
+        ).unwrap();
+        match stmt {
+            Statement::CreateType(ct) => {
+                assert_eq!(ct.name.parts, vec!["address"]);
+                match &ct.definition {
+                    TypeDefinition::Composite(attrs) => {
+                        assert_eq!(attrs.len(), 3);
+                        assert_eq!(attrs[0].name, "street");
+                        assert_eq!(attrs[1].name, "city");
+                        assert_eq!(attrs[2].name, "zip_code");
+                    }
+                    other => panic!("expected Composite, got {:?}", other),
+                }
+            }
+            _ => panic!("expected CreateType"),
+        }
+    }
+
+    #[test]
+    fn test_create_type_enum() {
+        let stmt = Parser::parse(
+            "CREATE TYPE status AS ENUM ('active', 'inactive', 'pending')"
+        ).unwrap();
+        match stmt {
+            Statement::CreateType(ct) => {
+                assert_eq!(ct.name.parts, vec!["status"]);
+                match &ct.definition {
+                    TypeDefinition::Enum(values) => {
+                        assert_eq!(values.len(), 3);
+                        assert_eq!(values[0], "active");
+                        assert_eq!(values[1], "inactive");
+                        assert_eq!(values[2], "pending");
+                    }
+                    other => panic!("expected Enum, got {:?}", other),
+                }
+            }
+            _ => panic!("expected CreateType"),
+        }
+    }
+
+    #[test]
+    fn test_create_type_range() {
+        let stmt = Parser::parse(
+            "CREATE TYPE float_range AS RANGE (SUBTYPE = DOUBLE PRECISION)"
+        ).unwrap();
+        match stmt {
+            Statement::CreateType(ct) => {
+                assert_eq!(ct.name.parts, vec!["float_range"]);
+                match &ct.definition {
+                    TypeDefinition::Range(subtype) => {
+                        assert_eq!(*subtype, DataType::Double);
+                    }
+                    other => panic!("expected Range, got {:?}", other),
+                }
+            }
+            _ => panic!("expected CreateType"),
+        }
+    }
+
+    // MERGE tests
+
+    #[test]
+    fn test_merge_simple() {
+        let stmt = Parser::parse(
+            "MERGE INTO target t USING source s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.value = s.value"
+        ).unwrap();
+        match stmt {
+            Statement::Merge(mg) => {
+                assert_eq!(mg.target.parts, vec!["target"]);
+                assert_eq!(mg.source, MergeSource::Table(ObjectName::new(vec!["source".to_string()])));
+                assert_eq!(mg.clauses.len(), 1);
+                match &mg.clauses[0] {
+                    MergeClause::WhenMatched { condition, action } => {
+                        assert!(condition.is_none());
+                        match action {
+                            MergeAction::Update { set_clauses } => {
+                                assert_eq!(set_clauses.len(), 1);
+                                assert_eq!(set_clauses[0].column, "t.value");
+                            }
+                            other => panic!("expected Update, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected WhenMatched, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Merge"),
+        }
+    }
+
+    #[test]
+    fn test_merge_with_multiple_actions() {
+        let stmt = Parser::parse(
+            "MERGE INTO target t USING source s ON t.id = s.id WHEN MATCHED AND t.status = 'old' THEN DELETE WHEN NOT MATCHED THEN INSERT (id, name) VALUES (s.id, s.name)"
+        ).unwrap();
+        match stmt {
+            Statement::Merge(mg) => {
+                assert_eq!(mg.target.parts, vec!["target"]);
+                assert_eq!(mg.clauses.len(), 2);
+                match &mg.clauses[0] {
+                    MergeClause::WhenMatched { condition, action } => {
+                        assert!(condition.is_some());
+                        match action {
+                            MergeAction::Delete => {},
+                            other => panic!("expected Delete, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected WhenMatched, got {:?}", other),
+                }
+                match &mg.clauses[1] {
+                    MergeClause::WhenNotMatched { condition, action } => {
+                        assert!(condition.is_none());
+                        match action {
+                            MergeAction::Insert { columns, source } => {
+                                assert_eq!(columns.as_ref().unwrap().len(), 2);
+                                assert!(matches!(source, MergeInsertSource::Values(_)));
+                            }
+                            other => panic!("expected Insert, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected WhenNotMatched, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Merge"),
+        }
+    }
+
+    #[test]
+    fn test_merge_with_subquery_source() {
+        let stmt = Parser::parse(
+            "MERGE INTO target t USING (SELECT id, name FROM source) s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.name = s.name"
+        ).unwrap();
+        match stmt {
+            Statement::Merge(mg) => {
+                assert_eq!(mg.target.parts, vec!["target"]);
+                match &mg.source {
+                    MergeSource::Subquery(_query) => {
+                        // Subquery parsed successfully
+                    }
+                    other => panic!("expected Subquery, got {:?}", other),
+                }
+                assert_eq!(mg.clauses.len(), 1);
+            }
+            _ => panic!("expected Merge"),
+        }
+    }
+
+    #[test]
+    fn test_merge_with_condition() {
+        let stmt = Parser::parse(
+            "MERGE INTO target t USING source s ON t.id = s.id WHEN MATCHED AND s.amount > 100 THEN UPDATE SET t.status = 'high_value'"
+        ).unwrap();
+        match stmt {
+            Statement::Merge(mg) => {
+                assert_eq!(mg.clauses.len(), 1);
+                match &mg.clauses[0] {
+                    MergeClause::WhenMatched { condition, action } => {
+                        assert!(condition.is_some());
+                        match action {
+                            MergeAction::Update { set_clauses } => {
+                                assert_eq!(set_clauses.len(), 1);
+                                assert_eq!(set_clauses[0].column, "t.status");
+                            }
+                            other => panic!("expected Update, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected WhenMatched, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Merge"),
+        }
+    }
+
+    // Type casting tests
+
+    #[test]
+    fn test_array_cast() {
+        let stmt = Parser::parse("SELECT '{1,2,3}'::INTEGER[]").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 1);
+                match &sel.select_list[0] {
+                    SelectItem::Expr(Expr::TypeCast { data_type, .. }) => {
+                        match data_type {
+                            DataType::Array(inner) => {
+                                assert_eq!(*inner, Box::new(DataType::Int));
+                            }
+                            other => panic!("expected Array, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected TypeCast, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_json_cast() {
+        let stmt = Parser::parse("SELECT '{\"key\": \"value\"}'::JSON").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 1);
+                match &sel.select_list[0] {
+                    SelectItem::Expr(Expr::TypeCast { data_type, .. }) => {
+                        assert_eq!(*data_type, DataType::Json);
+                    }
+                    other => panic!("expected TypeCast, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_uuid_cast() {
+        let stmt = Parser::parse("SELECT 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11'::UUID").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 1);
+                match &sel.select_list[0] {
+                    SelectItem::Expr(Expr::TypeCast { data_type, .. }) => {
+                        assert_eq!(*data_type, DataType::Uuid);
+                    }
+                    other => panic!("expected TypeCast, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_boolean_cast() {
+        let stmt = Parser::parse("SELECT 'true'::BOOLEAN").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 1);
+                match &sel.select_list[0] {
+                    SelectItem::Expr(Expr::TypeCast { data_type, .. }) => {
+                        assert_eq!(*data_type, DataType::Boolean);
+                    }
+                    other => panic!("expected TypeCast, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_money_cast() {
+        let stmt = Parser::parse("SELECT '123.45'::MONEY").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 1);
+                match &sel.select_list[0] {
+                    SelectItem::Expr(Expr::TypeCast { data_type, .. }) => {
+                        assert_eq!(*data_type, DataType::Money);
+                    }
+                    other => panic!("expected TypeCast, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    // Additional parser tests
+
+    #[test]
+    fn test_select_with_in_subquery() {
+        let stmt = Parser::parse(
+            "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders)"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.where_clause.is_some());
+                let where_clause = sel.where_clause.as_ref().unwrap();
+                match where_clause.as_ref() {
+                    Expr::InSubquery { expr, negated, subquery: _ } => {
+                        assert!(!negated);
+                        match expr.as_ref() {
+                            Expr::Identifier(name) => assert_eq!(name, "id"),
+                            other => panic!("expected Identifier, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected InSubquery, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_select_with_between() {
+        let stmt = Parser::parse(
+            "SELECT * FROM users WHERE age BETWEEN 18 AND 65"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.where_clause.is_some());
+                let where_clause = sel.where_clause.as_ref().unwrap();
+                match where_clause.as_ref() {
+                    Expr::Between { expr, low, high, .. } => {
+                        match expr.as_ref() {
+                            Expr::Identifier(name) => assert_eq!(name, "age"),
+                            other => panic!("expected Identifier, got {:?}", other),
+                        }
+                        match low.as_ref() {
+                            Expr::Literal(Literal::Number(n)) => assert_eq!(n, "18"),
+                            other => panic!("expected Number, got {:?}", other),
+                        }
+                        match high.as_ref() {
+                            Expr::Literal(Literal::Number(n)) => assert_eq!(n, "65"),
+                            other => panic!("expected Number, got {:?}", other),
+                        }
+                    }
+                    other => panic!("expected Between, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_window_with_partition_and_order() {
+        let stmt = Parser::parse(
+            "SELECT id, department, SUM(amount) OVER (PARTITION BY department ORDER BY id) FROM employees"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 3);
+                match &sel.select_list[2] {
+                    SelectItem::Expr(Expr::Function(func)) => {
+                        assert!(func.over.is_some());
+                        let window = func.over.as_ref().unwrap();
+                        assert_eq!(window.partition_by.len(), 1);
+                        assert_eq!(window.order_by.len(), 1);
+                        assert!(window.frame.is_none());
+                    }
+                    other => panic!("expected Function, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+

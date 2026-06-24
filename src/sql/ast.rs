@@ -7,9 +7,12 @@ pub enum Statement {
     CreateTable(CreateTableStatement),
     CreateIndex(CreateIndexStatement),
     CreateView(CreateViewStatement),
+    CreateSequence(CreateSequenceStatement),
+    CreateType(CreateTypeStatement),
     AlterTable(AlterTableStatement),
     DropTable(DropTableStatement),
     DropIndex(DropIndexStatement),
+    Merge(MergeStatement),
     Begin(BeginStatement),
     Commit,
     Rollback,
@@ -171,6 +174,85 @@ pub struct CreateViewStatement {
     pub columns: Option<Vec<String>>,
     pub query: Box<SelectStatement>,
     pub or_replace: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateSequenceStatement {
+    pub name: ObjectName,
+    pub if_not_exists: bool,
+    pub data_type: Option<DataType>,
+    pub increment: Option<i64>,
+    pub min_value: Option<i64>,
+    pub max_value: Option<i64>,
+    pub start: Option<i64>,
+    pub cache: Option<i64>,
+    pub cycle: bool,
+    pub owned_by: Option<ObjectName>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateTypeStatement {
+    pub name: ObjectName,
+    pub definition: TypeDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeDefinition {
+    Composite(Vec<CompositeAttribute>),
+    Enum(Vec<String>),
+    Range(DataType),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompositeAttribute {
+    pub name: String,
+    pub data_type: DataType,
+    pub collation: Option<ObjectName>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeStatement {
+    pub target: ObjectName,
+    pub source: MergeSource,
+    pub join_condition: Box<Expr>,
+    pub clauses: Vec<MergeClause>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MergeSource {
+    Table(ObjectName),
+    Subquery(Box<SelectStatement>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MergeClause {
+    WhenMatched {
+        condition: Option<Box<Expr>>,
+        action: MergeAction,
+    },
+    WhenNotMatched {
+        condition: Option<Box<Expr>>,
+        action: MergeAction,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MergeAction {
+    Update {
+        set_clauses: Vec<SetClause>,
+    },
+    Delete,
+    DoNothing,
+    Insert {
+        columns: Option<Vec<String>>,
+        source: MergeInsertSource,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum MergeInsertSource {
+    Values(Vec<Vec<Expr>>),
+    DefaultValues,
 }
 
 #[derive(Debug, Clone, PartialEq)]

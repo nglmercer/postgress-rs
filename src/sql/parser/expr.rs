@@ -897,12 +897,70 @@ impl Parser {
             }
         }
 
+        // Parse frame clause: ROWS|RANGE|GROUPS ...
+        let frame = if matches!(self.peek(), Token::Keyword(k) 
+            if k.to_uppercase() == "ROWS" || k.to_uppercase() == "RANGE" || k.to_uppercase() == "GROUPS") 
+        {
+            let _frame_type = self.advance();
+            let is_between = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "BETWEEN");
+            if is_between {
+                self.advance();
+                let start = self.parse_frame_bound()?;
+                self.expect_keyword("AND")?;
+                let end = Some(self.parse_frame_bound()?);
+                Some(Box::new(FrameClause {
+                    start,
+                    end,
+                }))
+            } else {
+                let start = self.parse_frame_bound()?;
+                // Single bound: end defaults to CURRENT ROW
+                let end = Some(Box::new(FrameBound::CurrentRow));
+                Some(Box::new(FrameClause {
+                    start,
+                    end,
+                }))
+            }
+        } else {
+            None
+        };
+
         self.expect(&Token::RParen)?;
 
         Ok(WindowSpec {
             partition_by,
             order_by,
-            frame: None,
+            frame,
         })
+    }
+
+    fn parse_frame_bound(&mut self) -> anyhow::Result<Box<FrameBound>> {
+        match self.peek() {
+            Token::Keyword(k) if k.to_uppercase() == "UNBOUNDED" => {
+                self.advance();
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "PRECEDING") {
+                    self.advance();
+                    Ok(Box::new(FrameBound::UnboundedPreceding))
+                } else {
+                    self.expect_keyword("FOLLOWING")?;
+                    Ok(Box::new(FrameBound::UnboundedFollowing))
+                }
+            }
+            Token::Keyword(k) if k.to_uppercase() == "CURRENT" => {
+                self.advance();
+                self.expect_keyword("ROW")?;
+                Ok(Box::new(FrameBound::CurrentRow))
+            }
+            _ => {
+                let expr = self.parse_expr()?;
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "PRECEDING") {
+                    self.advance();
+                    Ok(Box::new(FrameBound::Preceding(Box::new(expr))))
+                } else {
+                    self.expect_keyword("FOLLOWING")?;
+                    Ok(Box::new(FrameBound::Following(Box::new(expr))))
+                }
+            }
+        }
     }
 }

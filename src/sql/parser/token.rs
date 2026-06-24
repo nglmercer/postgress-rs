@@ -203,7 +203,11 @@ pub(crate) fn tokenize(sql: &str) -> Vec<Token> {
                     "LENGTH" | "UPPER" | "LOWER" | "TRIM" | "LTRIM" | "RTRIM" |
                     "SUBSTRING" | "REPLACE" | "CONCAT" | "CONCAT_WS" |
                     "INITCAP" | "POSITION" | "STRPOS" | "OVERLAY" |
-                    "LPAD" | "RPAD" | "REGEXP_REPLACE" | "REGEXP_MATCHES" => {
+                    "LPAD" | "RPAD" | "REGEXP_REPLACE" | "REGEXP_MATCHES" |
+                    "SEQUENCE" | "INCREMENT" | "CACHE" | "CYCLE" | "OWNED" | "MINVALUE" | "MAXVALUE" |
+                    "MERGE" | "MATCHED" | "SOURCE" | "TARGET" |
+                    "COMPOSITE" | "ENUM" |
+                    "NOCYCLE" | "NO" | "NOMINVALUE" | "NOMAXVALUE" | "NOCACHE" => {
                         tokens.push(Token::Keyword(s));
                     }
                     _ => {

@@ -589,6 +589,15 @@ async fn handle_statement(
         Statement::Explain(inner_stmt) => {
             handle_explain_statement(inner_stmt, catalog, cache, wal, txn_mgr, current_xid, socket).await;
         }
+        Statement::CreateSequence(_) => {
+            send_error(socket, "CREATE SEQUENCE not yet supported".to_string()).await;
+        }
+        Statement::CreateType(_) => {
+            send_error(socket, "CREATE TYPE not yet supported".to_string()).await;
+        }
+        Statement::Merge(_) => {
+            send_error(socket, "MERGE not yet supported".to_string()).await;
+        }
     }
 }
 

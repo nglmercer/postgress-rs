@@ -200,7 +200,15 @@ impl Parser {
                     or_replace,
                 }))
             }
-            _ => anyhow::bail!("expected TABLE, INDEX, or VIEW after CREATE"),
+            Token::Keyword(k) if k.to_uppercase() == "SEQUENCE" => {
+                self.advance();
+                self.parse_create_sequence()
+            }
+            Token::Keyword(k) if k.to_uppercase() == "TYPE" => {
+                self.advance();
+                self.parse_create_type()
+            }
+            _ => anyhow::bail!("expected TABLE, INDEX, VIEW, SEQUENCE, or TYPE after CREATE"),
         }
     }
 
@@ -519,5 +527,423 @@ impl Parser {
             }
             _ => anyhow::bail!("expected TABLE or INDEX after DROP"),
         }
+    }
+
+    pub(crate) fn parse_merge(&mut self) -> anyhow::Result<MergeStatement> {
+        self.expect_keyword("MERGE")?;
+        self.expect_keyword("INTO")?;
+
+        let mut target_parts = vec![self.expect_ident()?];
+        while matches!(self.peek(), Token::Dot) {
+            self.advance();
+            target_parts.push(self.expect_ident()?);
+        }
+        let target = ObjectName::new(target_parts);
+
+        // Optional alias
+        let _alias = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AS") {
+            self.advance();
+            Some(self.expect_ident()?)
+        } else if matches!(self.peek(), Token::Ident(_)) {
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
+
+        self.expect_keyword("USING")?;
+
+        // Source can be a table or subquery
+        let source = if matches!(self.peek(), Token::LParen) {
+            self.advance();
+            let query = self.parse_select()?;
+            self.expect(&Token::RParen)?;
+            MergeSource::Subquery(Box::new(query))
+        } else {
+            let mut source_parts = vec![self.expect_ident()?];
+            while matches!(self.peek(), Token::Dot) {
+                self.advance();
+                source_parts.push(self.expect_ident()?);
+            }
+            MergeSource::Table(ObjectName::new(source_parts))
+        };
+
+        // Optional source alias
+        if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AS") {
+            self.advance();
+            self.advance();
+        } else if matches!(self.peek(), Token::Ident(_)) {
+            self.advance();
+        }
+
+        self.expect_keyword("ON")?;
+        let join_condition = Box::new(self.parse_expr()?);
+
+        let mut clauses = Vec::new();
+        loop {
+            if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHEN") {
+                self.advance();
+                let not_matched = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT");
+                if not_matched {
+                    self.advance();
+                    self.expect_keyword("MATCHED")?;
+                } else {
+                    self.expect_keyword("MATCHED")?;
+                }
+
+                let condition = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AND") {
+                    self.advance();
+                    Some(Box::new(self.parse_expr()?))
+                } else {
+                    None
+                };
+
+                self.expect_keyword("THEN")?;
+
+                let action = self.parse_merge_action(not_matched)?;
+
+                if not_matched {
+                    clauses.push(MergeClause::WhenNotMatched { condition, action });
+                } else {
+                    clauses.push(MergeClause::WhenMatched { condition, action });
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(MergeStatement {
+            target,
+            source,
+            join_condition,
+            clauses,
+        })
+    }
+
+    fn parse_merge_action(&mut self, _not_matched: bool) -> anyhow::Result<MergeAction> {
+        match self.peek() {
+            Token::Keyword(k) if k.to_uppercase() == "UPDATE" => {
+                self.advance();
+                self.expect_keyword("SET")?;
+                let mut set_clauses = Vec::new();
+                loop {
+                    let mut column = self.expect_ident()?;
+                    while matches!(self.peek(), Token::Dot) {
+                        self.advance();
+                        column.push('.');
+                        column.push_str(&self.expect_ident()?);
+                    }
+                    self.expect(&Token::Eq)?;
+                    let value = self.parse_expr()?;
+                    set_clauses.push(SetClause {
+                        column,
+                        value: Box::new(value),
+                    });
+                    if !matches!(self.peek(), Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                Ok(MergeAction::Update { set_clauses })
+            }
+            Token::Keyword(k) if k.to_uppercase() == "DELETE" => {
+                self.advance();
+                Ok(MergeAction::Delete)
+            }
+            Token::Keyword(k) if k.to_uppercase() == "INSERT" => {
+                self.advance();
+                let columns = if matches!(self.peek(), Token::LParen) {
+                    self.advance();
+                    let mut cols = Vec::new();
+                    loop {
+                        cols.push(self.expect_ident()?);
+                        if !matches!(self.peek(), Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                    self.expect(&Token::RParen)?;
+                    Some(cols)
+                } else {
+                    None
+                };
+
+                self.expect_keyword("VALUES")?;
+                self.expect(&Token::LParen)?;
+                let mut values = Vec::new();
+                loop {
+                    let mut row = Vec::new();
+                    loop {
+                        row.push(self.parse_expr()?);
+                        if !matches!(self.peek(), Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                    values.push(row);
+                    if !matches!(self.peek(), Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                self.expect(&Token::RParen)?;
+
+                Ok(MergeAction::Insert {
+                    columns,
+                    source: MergeInsertSource::Values(values),
+                })
+            }
+            Token::Keyword(k) if k.to_uppercase() == "DO" => {
+                self.advance();
+                self.expect_keyword("NOTHING")?;
+                Ok(MergeAction::DoNothing)
+            }
+            _ => anyhow::bail!("expected UPDATE, DELETE, INSERT, or DO NOTHING in MERGE action"),
+        }
+    }
+
+    pub(crate) fn parse_create_sequence(&mut self) -> anyhow::Result<Statement> {
+        let if_not_exists = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF") {
+            self.advance();
+            self.expect_keyword("NOT")?;
+            self.expect_keyword("EXISTS")?;
+            true
+        } else {
+            false
+        };
+
+        let mut parts = vec![self.expect_ident()?];
+        while matches!(self.peek(), Token::Dot) {
+            self.advance();
+            parts.push(self.expect_ident()?);
+        }
+        let name = ObjectName::new(parts);
+
+        let mut data_type = None;
+        let mut increment = None;
+        let mut min_value = None;
+        let mut max_value = None;
+        let mut start = None;
+        let mut cache = None;
+        let mut cycle = false;
+        let mut owned_by = None;
+
+        loop {
+            match self.peek() {
+                Token::Keyword(k) if k.to_uppercase() == "AS" => {
+                    self.advance();
+                    data_type = Some(self.parse_data_type()?);
+                }
+                Token::Keyword(k) if k.to_uppercase() == "INCREMENT" => {
+                    self.advance();
+                    self.expect_keyword("BY")?;
+                    let negative = matches!(self.peek(), Token::Minus);
+                    if negative {
+                        self.advance();
+                    }
+                    let n: i64 = match &self.peek().clone() {
+                        Token::Number(n) => {
+                            let v: i64 = n.parse().unwrap_or(1);
+                            self.advance();
+                            v
+                        }
+                        _ => 1,
+                    };
+                    increment = Some(if negative { -n } else { n });
+                }
+                Token::Keyword(k) if k.to_uppercase() == "MINVALUE" || k.to_uppercase() == "MINVALUE" => {
+                    self.advance();
+                    let n: i64 = match &self.peek().clone() {
+                        Token::Number(n) => {
+                            let v: i64 = n.parse().unwrap_or(1);
+                            self.advance();
+                            v
+                        }
+                        _ => 1,
+                    };
+                    min_value = Some(n);
+                }
+                Token::Keyword(k) if k.to_uppercase() == "MAXVALUE" || k.to_uppercase() == "MAXVALUE" => {
+                    self.advance();
+                    let n: i64 = match &self.peek().clone() {
+                        Token::Number(n) => {
+                            let v: i64 = n.parse().unwrap_or(i64::MAX);
+                            self.advance();
+                            v
+                        }
+                        _ => i64::MAX,
+                    };
+                    max_value = Some(n);
+                }
+                Token::Keyword(k) if k.to_uppercase() == "START" => {
+                    self.advance();
+                    let with = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WITH");
+                    if with {
+                        self.advance();
+                    }
+                    let n: i64 = match &self.peek().clone() {
+                        Token::Number(n) => {
+                            let v: i64 = n.parse().unwrap_or(1);
+                            self.advance();
+                            v
+                        }
+                        _ => 1,
+                    };
+                    start = Some(n);
+                }
+                Token::Keyword(k) if k.to_uppercase() == "CACHE" => {
+                    self.advance();
+                    let n: i64 = match &self.peek().clone() {
+                        Token::Number(n) => {
+                            let v: i64 = n.parse().unwrap_or(1);
+                            self.advance();
+                            v
+                        }
+                        _ => 1,
+                    };
+                    cache = Some(n);
+                }
+                Token::Keyword(k) if k.to_uppercase() == "CYCLE" => {
+                    self.advance();
+                    cycle = true;
+                }
+                Token::Keyword(k) if k.to_uppercase() == "NO" => {
+                    self.advance();
+                    // NO CYCLE, NO MINVALUE, NO MAXVALUE, NO CACHE
+                    match self.peek() {
+                        Token::Keyword(k) if k.to_uppercase() == "CYCLE" => {
+                            self.advance();
+                            cycle = false;
+                        }
+                        Token::Keyword(k) if k.to_uppercase() == "MINVALUE" => {
+                            self.advance();
+                            min_value = None;
+                        }
+                        Token::Keyword(k) if k.to_uppercase() == "MAXVALUE" => {
+                            self.advance();
+                            max_value = None;
+                        }
+                        Token::Keyword(k) if k.to_uppercase() == "CACHE" => {
+                            self.advance();
+                            cache = None;
+                        }
+                        _ => {}
+                    }
+                }
+                Token::Keyword(k) if k.to_uppercase() == "OWNED" => {
+                    self.advance();
+                    self.expect_keyword("BY")?;
+                    let mut owned_parts = vec![self.expect_ident()?];
+                    while matches!(self.peek(), Token::Dot) {
+                        self.advance();
+                        owned_parts.push(self.expect_ident()?);
+                    }
+                    owned_by = Some(ObjectName::new(owned_parts));
+                }
+                _ => break,
+            }
+        }
+
+        Ok(Statement::CreateSequence(CreateSequenceStatement {
+            name,
+            if_not_exists,
+            data_type,
+            increment,
+            min_value,
+            max_value,
+            start,
+            cache,
+            cycle,
+            owned_by,
+        }))
+    }
+
+    pub(crate) fn parse_create_type(&mut self) -> anyhow::Result<Statement> {
+        let mut parts = vec![self.expect_ident()?];
+        while matches!(self.peek(), Token::Dot) {
+            self.advance();
+            parts.push(self.expect_ident()?);
+        }
+        let name = ObjectName::new(parts);
+
+        self.expect_keyword("AS")?;
+
+        let definition = match self.peek() {
+            Token::Keyword(k) if k.to_uppercase() == "ENUM" => {
+                self.advance();
+                self.expect(&Token::LParen)?;
+                let mut values = Vec::new();
+                loop {
+                    values.push(self.expect_string()?);
+                    if !matches!(self.peek(), Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                self.expect(&Token::RParen)?;
+                TypeDefinition::Enum(values)
+            }
+            Token::Keyword(k) if k.to_uppercase() == "RANGE" => {
+                self.advance();
+                if matches!(self.peek(), Token::LParen) {
+                    self.advance();
+                    // SUBTYPE may be an ident or keyword
+                    match self.peek() {
+                        Token::Keyword(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
+                        Token::Ident(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
+                        _ => anyhow::bail!("expected SUBTYPE"),
+                    }
+                    self.expect(&Token::Eq)?;
+                    let subtype = self.parse_data_type()?;
+                    self.expect(&Token::RParen)?;
+                    TypeDefinition::Range(subtype)
+                } else {
+                    match self.peek() {
+                        Token::Keyword(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
+                        Token::Ident(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
+                        _ => anyhow::bail!("expected SUBTYPE"),
+                    }
+                    self.expect(&Token::Eq)?;
+                    let subtype = self.parse_data_type()?;
+                    TypeDefinition::Range(subtype)
+                }
+            }
+            Token::LParen => {
+                // Composite type
+                self.advance();
+                let mut attrs = Vec::new();
+                loop {
+                    let attr_name = self.expect_ident()?;
+                    let data_type = self.parse_data_type()?;
+                    let collation = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "COLLATE") {
+                        self.advance();
+                        let mut collation_parts = vec![self.expect_ident()?];
+                        while matches!(self.peek(), Token::Dot) {
+                            self.advance();
+                            collation_parts.push(self.expect_ident()?);
+                        }
+                        Some(ObjectName::new(collation_parts))
+                    } else {
+                        None
+                    };
+                    attrs.push(CompositeAttribute {
+                        name: attr_name,
+                        data_type,
+                        collation,
+                    });
+                    if !matches!(self.peek(), Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                self.expect(&Token::RParen)?;
+                TypeDefinition::Composite(attrs)
+            }
+            _ => anyhow::bail!("expected ENUM, RANGE, or ( after CREATE TYPE ... AS"),
+        };
+
+        Ok(Statement::CreateType(CreateTypeStatement {
+            name,
+            definition,
+        }))
     }
 }
