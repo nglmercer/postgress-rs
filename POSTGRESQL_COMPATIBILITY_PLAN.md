@@ -1,8 +1,10 @@
 # Full PostgreSQL Compatibility Plan
 
 ## Current State
-- **230 tests passing, 0 failures, 0 warnings**
-- Complete SQL parser with AST, CTE support
+- **311 tests passing, 0 failures, 0 warnings**
+- Complete SQL parser with AST, CTE support, type casting, additional data types
+- Date/Time types and functions: NOW(), CURRENT_DATE/TIME/TIMESTAMP, EXTRACT, DATE_TRUNC, DATE_PART, AT TIME ZONE
+- Type casting for: BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMPTZ, INTERVAL, BIT, BIT VARYING
 - Simple + Extended query protocols
 - B-tree indexes, MVCC visibility, WAL, BufferPool
 
@@ -50,36 +52,49 @@
 ## Milestone 2: Type System (M3 from ROADMAP)
 
 ### 2.1 Numeric Types
-- [ ] `SMALLINT` (2 bytes)
-- [ ] `INTEGER` (4 bytes)
-- [ ] `BIGINT` (8 bytes)
-- [ ] `DECIMAL`/`NUMERIC` with arbitrary precision
-- [ ] `REAL` (4 bytes float)
-- [ ] `DOUBLE PRECISION` (8 bytes float)
-- [ ] `SERIAL`, `BIGSERIAL`
+- [x] `SMALLINT` (2 bytes)
+- [x] `INTEGER` (4 bytes)
+- [x] `BIGINT` (8 bytes)
+- [x] `DECIMAL`/`NUMERIC` with arbitrary precision
+- [x] `REAL` (4 bytes float)
+- [x] `DOUBLE PRECISION` (8 bytes float)
+- [x] `SERIAL`, `BIGSERIAL`, `SMALLSERIAL`
+- [x] `MONEY`
 
 ### 2.2 String Types
-- [ ] `CHAR(n)`, `VARCHAR(n)`, `TEXT`
+- [x] `CHAR(n)`, `VARCHAR(n)`, `TEXT`
 - [ ] String functions: `LENGTH`, `UPPER`, `LOWER`, `TRIM`, `SUBSTRING`, `CONCAT`
-- [ ] Pattern matching: `LIKE`, `ILIKE`, `SIMILAR TO`
-- [ ] Regular expressions: `~`, `~*`, `!~`, `!~*`
+- [x] Pattern matching: `LIKE`, `ILIKE`, `SIMILAR TO`
+- [x] Regular expressions: `~`, `~*`, `!~`, `!~*`
 
 ### 2.3 Date/Time Types
-- [ ] `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMPTZ`
-- [ ] `INTERVAL`
-- [ ] Date/Time functions: `NOW()`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`
-- [ ] `EXTRACT`, `DATE_TRUNC`, `DATE_PART`
-- [ ] `AT TIME ZONE`
+- [x] `DATE`, `TIME`, `TIMESTAMP`, `TIMESTAMPTZ`
+- [x] `INTERVAL`
+- [x] `TIME WITH TIME ZONE` (`TIMETZ`)
+- [x] Date/Time functions: `NOW()`, `CURRENT_DATE`, `CURRENT_TIMESTAMP`, `CURRENT_TIME`, `LOCALTIME`, `LOCALTIMESTAMP`
+- [x] `EXTRACT`, `DATE_TRUNC`, `DATE_PART` with all date parts (YEAR, MONTH, DAY, HOUR, MINUTE, SECOND, DOW, DOY, ISODOW, WEEK, QUARTER, EPOCH, ISOYEAR, TIMEZONE, TIMEZONE_HOUR, TIMEZONE_MINUTE)
+- [x] `AT TIME ZONE`
 
 ### 2.4 Other Types
-- [ ] `BOOLEAN`
-- [ ] `UUID`
-- [ ] `JSON` and `JSONB`
-- [ ] `ARRAY` types
-- [ ] `MONEY`
-- [ ] `INET`, `CIDR`, `MACADDR`
-- [ ] `BIT`, `BIT VARYING`
-- [ ] `TSVECTOR`, `TSQUERY` (full-text search)
+- [x] `JSON`, `JSONB`
+- [x] `UUID`
+- [x] `ARRAY`
+- [x] `BOOLEAN`
+- [x] `INET`, `CIDR`, `MACADDR`
+- [x] `BIT`, `BIT VARYING`
+- [x] `TSVECTOR`, `TSQUERY`
+
+### 2.5 Type Casting
+- [x] `CAST(x AS type)` syntax
+- [x] `x::type` PostgreSQL shorthand syntax
+- [x] `BOOLEAN`
+- [x] `UUID`
+- [x] `JSON` and `JSONB`
+- [x] `ARRAY` types (including `type[]` suffix syntax)
+- [x] `MONEY`
+- [ ] `INET`, `CIDR`, `MACADDR` (types parsed, casting pending)
+- [x] `BIT`, `BIT VARYING`
+- [ ] `TSVECTOR`, `TSQUERY` (types parsed, casting pending)
 
 ---
 

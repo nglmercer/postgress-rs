@@ -360,6 +360,7 @@ pub enum DataType {
     Boolean,
     Date,
     Time,
+    TimeTz,
     Timestamp,
     TimestampTz,
     Interval,
@@ -370,6 +371,13 @@ pub enum DataType {
     BigSerial,
     SmallSerial,
     Money,
+    Inet,
+    Cidr,
+    MacAddr,
+    Bit(u32),
+    BitVarying(u32),
+    TsVector,
+    TsQuery,
     Array(Box<DataType>),
     Custom(Vec<String>),
 }
@@ -460,6 +468,32 @@ pub enum Expr {
         expr: Box<Expr>,
         collation: ObjectName,
     },
+    AnyComparison {
+        op: BinaryOperator,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    SomeComparison {
+        op: BinaryOperator,
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    AtTimeZone {
+        expr: Box<Expr>,
+        zone: Box<Expr>,
+    },
+    IntervalExpr {
+        value: Box<Expr>,
+    },
+    Extract {
+        field: DatePart,
+        from: Box<Expr>,
+    },
+    DateTrunc {
+        field: DatePart,
+        source: Box<Expr>,
+        zone: Option<Box<Expr>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -475,6 +509,65 @@ pub enum Literal {
     Bool(bool),
     Null,
     Blob(Vec<u8>),
+    Date(String),
+    Time(String),
+    Timestamp(String),
+    TimestampTz(String),
+    Interval(String),
+    Json(String),
+    JsonB(String),
+    Uuid(String),
+    Money(String),
+    Bit(String),
+    Hex(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DatePart {
+    Year,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    Second,
+    Millisecond,
+    Microsecond,
+    Dow,
+    Doy,
+    IsoDow,
+    Week,
+    Quarter,
+    Epoch,
+    IsoYear,
+    Timezone,
+    TimezoneHour,
+    TimezoneMinute,
+}
+
+impl DatePart {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "YEAR" | "YEARS" => Some(DatePart::Year),
+            "MONTH" | "MONTHS" => Some(DatePart::Month),
+            "DAY" | "DAYS" => Some(DatePart::Day),
+            "HOUR" | "HOURS" => Some(DatePart::Hour),
+            "MINUTE" | "MINUTES" => Some(DatePart::Minute),
+            "SECOND" | "SECONDS" => Some(DatePart::Second),
+            "MILLISECOND" | "MILLISECONDS" => Some(DatePart::Millisecond),
+            "MICROSECOND" | "MICROSECONDS" => Some(DatePart::Microsecond),
+            "DOW" => Some(DatePart::Dow),
+            "DOY" => Some(DatePart::Doy),
+            "ISODOW" => Some(DatePart::IsoDow),
+            "WEEK" | "WEEKS" => Some(DatePart::Week),
+            "QUARTER" | "QUARTERS" => Some(DatePart::Quarter),
+            "EPOCH" => Some(DatePart::Epoch),
+            "ISOYEAR" => Some(DatePart::IsoYear),
+            "TIMEZONE" => Some(DatePart::Timezone),
+            "TIMEZONE_HOUR" => Some(DatePart::TimezoneHour),
+            "TIMEZONE_MINUTE" => Some(DatePart::TimezoneMinute),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,8 +1,10 @@
 # Implementation Plan - Current State
 
 ## Summary
-- **230 tests passing, 0 failures, 0 warnings**
-- Complete SQL parser with AST, CTE support, all major PostgreSQL subsystems implemented
+- **311 tests passing, 0 failures, 0 warnings**
+- Complete SQL parser with AST, CTE support, type casting, additional data types, ANY/SOME
+- Date/Time types and functions, AT TIME ZONE, EXTRACT, DATE_TRUNC, DATE_PART
+- Complete type casting for BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMP, INTERVAL, BIT, BIT VARYING
 
 ## Completed Features
 
@@ -65,20 +67,27 @@
 | btree/search | 4 |
 | btree/scan | 3 |
 | transaction | 9 |
-| sql/parser | 23 |
+| sql/parser | 104 |
 | integration | 12 |
-| **Total** | **230** |
+| **Total** | **311** |
 
 ## Next Steps
 
 ### Phase B: Type System
-- Additional numeric types: `SERIAL`, `BIGSERIAL`, `SMALLSERIAL`, `MONEY`
-- Date/Time functions: `NOW()`, `CURRENT_DATE`, `EXTRACT()`, `DATE_TRUNC()`
-- String functions: `LENGTH()`, `UPPER()`, `LOWER()`, `TRIM()`, `SUBSTRING()`, `REPLACE()`
-- Type casting: `CAST(x AS type)`, `x::type` syntax
-- `IN` operator with subqueries
-- `BETWEEN` operator
-- `ANY`/`SOME` operators
+- [x] Additional numeric types: `SERIAL`, `BIGSERIAL`, `SMALLSERIAL`, `MONEY`
+- [x] Date/Time types: `DATE`, `TIME`, `TIMETZ`, `TIMESTAMP`, `TIMESTAMPTZ`, `INTERVAL`
+- [x] Date/Time functions: `NOW()`, `CURRENT_DATE`, `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `LOCALTIME`, `LOCALTIMESTAMP`
+- [x] `EXTRACT(field FROM source)`, `DATE_TRUNC(field, source)`, `DATE_PART(field, source)`
+- [x] `AT TIME ZONE` for timezone conversion
+- [ ] String functions: `LENGTH()`, `UPPER()`, `LOWER()`, `TRIM()`, `SUBSTRING()`, `REPLACE()`
+- [x] Type casting: `CAST(x AS type)`, `x::type` syntax
+- [x] Type casting: `BOOLEAN`, `UUID`, `JSON`, `JSONB`, `ARRAY`, `MONEY`, `DATE`, `TIME`, `TIMESTAMPTZ`, `INTERVAL`, `BIT`, `BIT VARYING`
+- [x] Network types: `INET`, `CIDR`, `MACADDR` (parsed)
+- [x] Full-text types: `TSVECTOR`, `TSQUERY` (parsed)
+- [x] `IN` operator with subqueries
+- [x] `BETWEEN` operator
+- [x] `ANY`/`SOME` operators
+- [x] `LIKE`/`ILIKE` operators
 
 ### Phase C: Storage Engine
 - Proper heap page format with line pointers
