@@ -160,16 +160,25 @@ pub async fn heap_scan(
     cache: &SharedBufferCache,
     rel_oid: u32,
 ) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
+    heap_scan_with_optional_snapshot(cache, rel_oid, None).await
+}
+
+pub async fn heap_scan_with_optional_snapshot(
+    cache: &SharedBufferCache,
+    rel_oid: u32,
+    snapshot: Option<&crate::transaction::Snapshot>,
+) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
     let state = cache
         .get_relation_state(Oid(rel_oid))
         .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
-    let snapshot = Snapshot {
+    let default_snapshot = Snapshot {
         xid: crate::transaction::TransactionId(u32::MAX),
         active_xids: vec![],
     };
+    let snap = snapshot.unwrap_or(&default_snapshot);
 
     let mut rows = Vec::new();
     for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
@@ -179,7 +188,7 @@ pub async fn heap_scan(
 
         for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
             if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
-                if !is_visible(&tup, &snapshot) {
+                if !is_visible(&tup, snap) {
                     continue;
                 }
                 let tid = crate::types::ItemPointerData {
@@ -463,7 +472,34 @@ pub async fn tuple_update(
         for (slot_idx, mut tup, new_data) in tuples_to_update {
             let xid = wal.allocate_xid();
 
-            // Mark old tuple as deleted
+            // Try HOT update first: if new tuple fits on same page, use LP_REDIRECT chain
+            if let Some(new_slot) = heap_page.hot_update(slot_idx as u16, &bincode::serialize(&{
+                let mut new_tup = tup.clone();
+                new_tup.xmin = xid;
+                new_tup.xmax = 0;
+                new_tup.data = new_data.clone();
+                new_tup
+            })?) {
+                tup.xmax = xid;
+                let old_encoded = bincode::serialize(&tup)?;
+                heap_page.tuples[slot_idx] = old_encoded;
+
+                cache.storage.write_page(page_id, &heap_page.serialize())?;
+                {
+                    let mut rel_state = state.lock();
+                    rel_state.dirty_buffers.push(page_id);
+                }
+                wal.append(&crate::wal::WALRecord::Update {
+                    rel_oid,
+                    page_id,
+                    old_tuple: tup,
+                    new_tuple: bincode::deserialize(&heap_page.tuples[new_slot as usize])?,
+                }).await?;
+                updated += 1;
+                continue;
+            }
+
+            // Fallback: mark old tuple as deleted, append new version
             tup.xmax = xid;
             let old_encoded = bincode::serialize(&tup)?;
             heap_page.tuples[slot_idx] = old_encoded;

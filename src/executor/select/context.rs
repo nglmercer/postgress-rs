@@ -1,14 +1,15 @@
 use crate::sql::ast::*;
 use crate::types::*;
 use crate::buffer_cache::SharedBufferCache;
-use crate::executor::heap::heap_scan;
-use crate::executor::select::{Row, execute_select};
+use crate::executor::heap::{heap_scan, heap_scan_with_optional_snapshot};
+use crate::executor::select::{Row, execute_select, execute_select_with_snapshot};
 
 pub struct ExecContext<'a> {
     pub(crate) cache: &'a SharedBufferCache,
     pub(crate) catalog: &'a crate::catalog::Catalog,
     pub(crate) col_names: Vec<String>,
     pub(crate) tuple_desc: Option<TupleDesc>,
+    pub(crate) snapshot: Option<crate::transaction::Snapshot>,
 }
 
 impl<'a> ExecContext<'a> {
@@ -18,7 +19,13 @@ impl<'a> ExecContext<'a> {
             catalog,
             col_names: vec![],
             tuple_desc: None,
+            snapshot: None,
         }
+    }
+
+    pub fn with_snapshot(mut self, snapshot: crate::transaction::Snapshot) -> Self {
+        self.snapshot = Some(snapshot);
+        self
     }
 
     pub async fn execute_from(&mut self, from: &FromClause) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
@@ -50,12 +57,12 @@ impl<'a> ExecContext<'a> {
                 let desc = rel.tuple_desc.clone();
                 self.col_names = desc.fields.iter().map(|a| a.name.clone()).collect();
                 self.tuple_desc = Some(desc);
-                let rows = heap_scan(self.cache, rel_oid).await?;
+                let rows = heap_scan_with_optional_snapshot(self.cache, rel_oid, self.snapshot.as_ref()).await?;
                 Ok(rows)
             }
             TableRef::Subquery(sub) => {
                 let sub_select = sub.as_ref().clone();
-                let result = Box::pin(execute_select(&sub_select, self.cache, self.catalog)).await?;
+                let result = Box::pin(execute_select_with_snapshot(&sub_select, self.cache, self.catalog, self.snapshot.clone())).await?;
                 let rows: Vec<(ItemPointerData, Row)> = result.rows.into_iter().enumerate().map(|(i, row)| {
                     (ItemPointerData { page_id: PageId(i as u32), offset: 0 }, row)
                 }).collect();

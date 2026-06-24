@@ -15,6 +15,21 @@ impl<'a> ExecContext<'a> {
         Ok(())
     }
 
+    fn rows_equal_on_order_by(
+        a: &Row,
+        b: &Row,
+        order_by: &[OrderByItem],
+    ) -> bool {
+        for item in order_by {
+            let a_val = crate::server::evaluate_expr(&item.expr, a, None).unwrap_or_default();
+            let b_val = crate::server::evaluate_expr(&item.expr, b, None).unwrap_or_default();
+            if a_val != b_val {
+                return false;
+            }
+        }
+        true
+    }
+
     fn compute_window_function(
         &self,
         rows: &mut Vec<Row>,
@@ -82,10 +97,11 @@ impl<'a> ExecContext<'a> {
                 let mut vals = Vec::new();
                 let mut i = 0;
                 while i < indexed_rows.len() {
-                    let mut j = i;
+                    let mut j = i + 1;
                     while j < indexed_rows.len() {
-                        let same = indexed_rows[i].1.iter().zip(indexed_rows[j].1.iter()).all(|(a, b)| a == b);
-                        if !same { break; }
+                        if !Self::rows_equal_on_order_by(&indexed_rows[i].1, &indexed_rows[j].1, &over.order_by) {
+                            break;
+                        }
                         j += 1;
                     }
                     let rank = (i + 1).to_string();
@@ -101,10 +117,11 @@ impl<'a> ExecContext<'a> {
                 let mut rank = 1;
                 let mut i = 0;
                 while i < indexed_rows.len() {
-                    let mut j = i;
+                    let mut j = i + 1;
                     while j < indexed_rows.len() {
-                        let same = indexed_rows[i].1.iter().zip(indexed_rows[j].1.iter()).all(|(a, b)| a == b);
-                        if !same { break; }
+                        if !Self::rows_equal_on_order_by(&indexed_rows[i].1, &indexed_rows[j].1, &over.order_by) {
+                            break;
+                        }
                         j += 1;
                     }
                     for _ in i..j {
@@ -170,6 +187,45 @@ impl<'a> ExecContext<'a> {
                     } else {
                         vals.push(default.clone());
                     }
+                }
+                vals
+            }
+            "FIRST_VALUE" => {
+                let mut vals = Vec::new();
+                if !indexed_rows.is_empty() {
+                    let first_val = indexed_rows[0].1.get(col_idx).cloned().unwrap_or_default();
+                    for _ in 0..indexed_rows.len() {
+                        vals.push(first_val.clone());
+                    }
+                }
+                vals
+            }
+            "LAST_VALUE" => {
+                let mut vals = Vec::new();
+                if !indexed_rows.is_empty() {
+                    let last_val = indexed_rows.last().unwrap().1.get(col_idx).cloned().unwrap_or_default();
+                    for _ in 0..indexed_rows.len() {
+                        vals.push(last_val.clone());
+                    }
+                }
+                vals
+            }
+            "NTH_VALUE" => {
+                let n = func.args.get(1)
+                    .and_then(|a| match a {
+                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        _ => None,
+                    })
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .unwrap_or(1);
+                let mut vals = Vec::new();
+                let nth_val = if n > 0 && n <= indexed_rows.len() {
+                    indexed_rows[n - 1].1.get(col_idx).cloned().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                for _ in 0..indexed_rows.len() {
+                    vals.push(nth_val.clone());
                 }
                 vals
             }

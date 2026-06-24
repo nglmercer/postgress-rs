@@ -25,7 +25,20 @@ pub async fn execute_select(
     cache: &SharedBufferCache,
     catalog: &crate::catalog::Catalog,
 ) -> anyhow::Result<SelectResult> {
-    let mut ctx = ExecContext::new(cache, catalog);
+    execute_select_with_snapshot(select, cache, catalog, None).await
+}
+
+pub async fn execute_select_with_snapshot(
+    select: &SelectStatement,
+    cache: &SharedBufferCache,
+    catalog: &crate::catalog::Catalog,
+    snapshot: Option<crate::transaction::Snapshot>,
+) -> anyhow::Result<SelectResult> {
+    let mut ctx = if let Some(snap) = snapshot {
+        ExecContext::new(cache, catalog).with_snapshot(snap)
+    } else {
+        ExecContext::new(cache, catalog)
+    };
 
     let base_rows = if let Some(ref from) = select.from {
         ctx.execute_from(from).await?
@@ -86,7 +99,7 @@ pub async fn execute_select(
     if !select.set_operations.is_empty() {
         let mut result = SelectResult { columns, rows: result_rows };
         for set_op in &select.set_operations {
-                let right_result = Box::pin(execute_select(&set_op.select, cache, catalog)).await?;
+                let right_result = Box::pin(execute_select_with_snapshot(&set_op.select, cache, catalog, ctx.snapshot.clone())).await?;
             result = ctx.apply_set_operation(result, right_result, &set_op.operator)?;
         }
         return Ok(result);
