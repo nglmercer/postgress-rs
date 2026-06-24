@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use super::tsquery::TsQuery;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TsVector {
@@ -43,7 +44,7 @@ const STOP_WORDS: &[&str] = &[
 ];
 
 pub fn to_tsvector(text: &str) -> TsVector {
-    let mut lexemes = Vec::new();
+    let mut lexemes: Vec<TsLexeme> = Vec::new();
     let mut word_pos = 1u32;
 
     for word in text.split(|c: char| !c.is_alphanumeric()) {

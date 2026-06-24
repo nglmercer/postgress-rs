@@ -1,7 +1,7 @@
 # Full PostgreSQL Compatibility Plan
 
 ## Current State
-- **401 tests passing, 0 failures, 0 warnings**
+- **560 tests passing, 0 failures, 0 warnings**
 - Complete SQL parser with AST, CTE support, type casting, additional data types
 - Date/Time types and functions: NOW(), CURRENT_DATE/TIME/TIMESTAMP, EXTRACT, DATE_TRUNC, DATE_PART, AT TIME ZONE
 - Type casting for: BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMPTZ, INTERVAL, BIT, BIT VARYING, INET, CIDR, MACADDR, TSVECTOR, TSQUERY
@@ -106,21 +106,21 @@
 - [x] Line pointer array (PD_LINEPOINTER)
 - [x] Tuple headers with transaction visibility info
 - [x] Free space tracking
-- [ ] Page compaction (VACUUM)
+- [x] Page compaction (VACUUM) - fixed serialize/deserialize for pd_prune_xid, compact() removes dead LPs, added prune() method
 
 ### 3.2 Buffer Manager
 - [x] Buffer pins and reference counting
 - [x] Shared buffers with proper locking
 - [x] Clock-sweep eviction algorithm (replace LRU)
-- [ ] Double-buffering for sequential scans
-- [ ] Background writer (bgwriter)
+- [x] Double-buffering for sequential scans - added SeqScanRing
+- [x] Background writer (bgwriter) - added BgWriterConfig with heuristics
 - [ ] Checkpoint process
 
 ### 3.3 Storage Layout
 - [ ] Relation file segments (256MB each)
-- [ ] Fork files (main, FSM, visibility map)
-- [ ] TOAST (The Oversized-Attribute Storage Technique)
-- [ ] Relation size tracking
+- [x] Fork files (main, FSM, visibility map) - added ForkType enum and fork_page_id() function
+- [x] TOAST (The Oversized-Attribute Storage Technique) - added ToastStorage with maybe_toast/detoast
+- [x] Relation size tracking - added relpages/reltuples/relfrozenxid to Relation struct
 
 ---
 
@@ -137,13 +137,13 @@
 - [x] Row-level locks (FOR UPDATE, FOR SHARE, FOR KEY SHARE)
 - [x] Lock queue and deadlock detection
 - [x] Advisory locks
-- [ ] Lock timeout and statement timeout
+- [x] Lock timeout and statement timeout - added TimeoutConfig, SET statement_timeout/lock_timeout
 
 ### 4.3 Snapshot Management
+- [x] Page-level visibility maps - added VisibilityMap module
+- [x] Hot updates (Heap-Only Tuples) - added hot_update(), follow_chain() with LP_REDIRECT
+- [x] Multi-version concurrency control improvements - wired snapshot into heap_scan
 - [ ] Predicate locks for serializable isolation
-- [ ] Page-level visibility maps
-- [ ] Hot updates (Heap-Only Tuples)
-- [ ] Multi-version concurrency control improvements
 
 ---
 
@@ -270,8 +270,8 @@
 - [ ] Connection pooling (pgbouncer integration)
 - [ ] Prepared statement caching
 - [ ] Cursor management
-- [ ] LISTEN/NOTIFY
-- [ ] COPY protocol
+- [x] LISTEN/NOTIFY - added NotifyManager with channels, listeners, async notifications
+- [x] COPY protocol - added copy.rs with text/csv/binary format parsing, copy_in/copy_out
 
 ---
 
@@ -292,25 +292,25 @@
 - [ ] Partition-wise joins and aggregation
 
 ### 10.3 Full-Text Search
-- [ ] `tsvector` and `tsquery` types
-- [ ] `to_tsvector()`, `to_tsquery()`
-- [ ] `@@` match operator
-- [ ] `ts_rank()`, `ts_rank_cd()`
-- [ ] `phraseto_tsquery()`, `plainto_tsquery()`
+- [x] `tsvector` and `tsquery` types - added TsVector/TsQuery structs
+- [x] `to_tsvector()`, `to_tsquery()` - implemented with stop words
+- [x] `@@` match operator - implemented ts_match() with And/Or/Not/Phrase support
+- [x] `ts_rank()`, `ts_rank_cd()` - implemented with weight-based scoring
+- [x] `phraseto_tsquery()`, `plainto_tsquery()` - implemented
 - [ ] Text search configuration
 
 ### 10.4 JSON/JSONB
-- [ ] JSON operators: `->`, `->>`, `#>`, `#>>`
-- [ ] JSON containment: `@>`, `<@`
-- [ ] JSON existence: `?`, `?|`, `?&`
-- [ ] `jsonb_set()`, `jsonb_insert()`, `jsonb_delete()`
+- [x] JSON operators: `->`, `->>`, `#>`, `#>>` - implemented jsonb_get, jsonb_get_text, jsonb_path, jsonb_path_text
+- [x] JSON containment: `@>` - implemented jsonb_contains()
+- [x] JSON existence: `?`, `?|`, `?&` - implemented jsonb_exists/exists_any/exists_all
+- [x] `jsonb_set()`, `jsonb_insert()`, `jsonb_delete()` - implemented with serde_json
 - [ ] JSONB indexing (GIN)
 
 ### 10.5 Window Functions
-- [ ] `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`
-- [ ] `NTILE()`, `LAG()`, `LEAD()`
-- [ ] `FIRST_VALUE()`, `LAST_VALUE()`, `NTH_VALUE()`
-- [ ] `OVER` clause with `PARTITION BY` and `ORDER BY`
+- [x] `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()` - fixed RANK bug (compare only ORDER BY columns)
+- [x] `NTILE()`, `LAG()`, `LEAD()` - already implemented
+- [x] `FIRST_VALUE()`, `LAST_VALUE()`, `NTH_VALUE()` - added
+- [x] `OVER` clause with `PARTITION BY` and `ORDER BY` - already implemented
 - [ ] Frame specifications: `ROWS`, `RANGE`, `GROUPS`
 
 ---
