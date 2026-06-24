@@ -26,4 +26,8 @@ impl StorageTrait for EphemeralStorage {
         pages.insert(page_id, data.to_vec());
         Ok(())
     }
+
+    fn sync_all(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

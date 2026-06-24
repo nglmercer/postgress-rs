@@ -51,4 +51,10 @@ impl StorageTrait for MmapStorage {
         file.sync_all()?;
         Ok(())
     }
+
+    fn sync_all(&self) -> anyhow::Result<()> {
+        let file = self.file.lock();
+        file.sync_all()?;
+        Ok(())
+    }
 }
