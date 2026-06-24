@@ -10,6 +10,7 @@ pub mod transaction;
 pub mod sql;
 pub mod suiteshell;
 pub mod server;
+pub mod concurrency;
 
 #[cfg(test)]
 mod server_tests;
