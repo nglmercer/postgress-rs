@@ -114,6 +114,13 @@ impl Parser {
             None
         };
 
+        let offset = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "OFFSET") {
+            self.advance();
+            Some(self.parse_expr()?)
+        } else {
+            None
+        };
+
         let mut set_operations = Vec::new();
         loop {
             match self.peek() {
@@ -167,6 +174,7 @@ impl Parser {
             having,
             order_by,
             limit,
+            offset,
             set_operations,
         })
     }

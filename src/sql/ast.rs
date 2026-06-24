@@ -43,6 +43,7 @@ pub struct SelectStatement {
     pub having: Option<Box<Expr>>,
     pub order_by: Vec<OrderByItem>,
     pub limit: Option<LimitClause>,
+    pub offset: Option<Expr>,
     /// Set operations (UNION, INTERSECT, EXCEPT)
     pub set_operations: Vec<SetOperation>,
 }

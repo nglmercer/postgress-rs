@@ -1,7 +1,7 @@
-use crate::types::{PageId, Tuple, TupleDesc, Oid};
 use crate::buffer_cache::SharedBufferCache;
 use crate::storage::StorageTrait;
 use crate::transaction::Snapshot;
+use crate::types::{Oid, PageId, Tuple, TupleDesc};
 
 pub struct TupleInsert {
     pub rel_oid: Oid,
@@ -64,20 +64,27 @@ pub async fn tuple_insert(
     op: &TupleInsert,
 ) -> anyhow::Result<()> {
     let (page_id, _encoded, xid) = {
-        let state = cache.get_relation_state(op.rel_oid).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+        let state = cache
+            .get_relation_state(op.rel_oid)
+            .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
         let mut rel_state = state.lock();
         let mut rel = rel_state.relation.clone();
 
         let page_id = if rel.pages.is_empty() {
             let new_page = PageId(1);
             rel.pages.push(new_page);
-            cache.storage.write_page(new_page, &vec![0u8; 8192])?;
+            let new_heap_page = crate::storage::heap_page::HeapPage::new();
+            cache
+                .storage
+                .write_page(new_page, &new_heap_page.serialize())?;
             new_page
         } else {
             *rel.pages.last().unwrap()
         };
 
-        let mut page = cache.storage.read_page(page_id)?;
+        let page_data = cache.storage.read_page(page_id)?;
+        let mut heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
+
         let mut data = Vec::new();
         for (i, val) in op.values.iter().enumerate() {
             if i > 0 {
@@ -86,8 +93,10 @@ pub async fn tuple_insert(
             data.extend_from_slice(val);
         }
         let xid = wal.allocate_xid();
-        let tup = Tuple { 
-            slots: (0..op.values.len()).map(|i| crate::types::SlotId(i as u16)).collect(), 
+        let tup = Tuple {
+            slots: (0..op.values.len())
+                .map(|i| crate::types::SlotId(i as u16))
+                .collect(),
             data,
             xmin: xid,
             xmax: 0,
@@ -96,30 +105,35 @@ pub async fn tuple_insert(
             xvac: 0,
         };
         let encoded: Vec<u8> = bincode::serialize(&tup)?;
-        
-        // Find end of existing data by scanning forward
-        let mut end_offset = 0;
-        while end_offset + 4 <= page.len() {
-            let len = u32::from_le_bytes([page[end_offset], page[end_offset+1], page[end_offset+2], page[end_offset+3]]) as usize;
-            if len == 0 || end_offset + 4 + len > page.len() {
-                break;
-            }
-            end_offset += 4 + len;
+
+        // Add tuple to heap page
+        if heap_page.add_tuple(&encoded).is_none() {
+            // Page is full, create a new page
+            let new_page_id = PageId(page_id.0 + 1);
+            rel.pages.push(new_page_id);
+            let mut new_heap_page = crate::storage::heap_page::HeapPage::new();
+            new_heap_page.add_tuple(&encoded);
+            cache
+                .storage
+                .write_page(new_page_id, &new_heap_page.serialize())?;
+            cache.storage.write_page(page_id, &heap_page.serialize())?;
+            rel_state.dirty_buffers.push(new_page_id);
+            rel_state.relation = rel;
+            (new_page_id, encoded, tup)
+        } else {
+            cache.storage.write_page(page_id, &heap_page.serialize())?;
+            rel_state.dirty_buffers.push(page_id);
+            rel_state.relation = rel;
+            (page_id, encoded, tup)
         }
-        
-        // Write length prefix + tuple data
-        let len_bytes = (encoded.len() as u32).to_le_bytes();
-        page[end_offset..end_offset + 4].copy_from_slice(&len_bytes);
-        page[end_offset + 4..end_offset + 4 + encoded.len()].copy_from_slice(&encoded);
-        
-        cache.storage.write_page(page_id, &page)?;
-        rel_state.dirty_buffers.push(page_id);
-        rel_state.relation = rel;
-        
-        (page_id, encoded, tup)
     };
 
-    wal.append(&crate::wal::WALRecord::Insert { rel_oid: op.rel_oid, page_id, tuple: xid }).await?;
+    wal.append(&crate::wal::WALRecord::Insert {
+        rel_oid: op.rel_oid,
+        page_id,
+        tuple: xid,
+    })
+    .await?;
     Ok(())
 }
 
@@ -129,13 +143,26 @@ pub async fn tuple_insert_bulk(
     op: &TupleInsertBulk,
 ) -> anyhow::Result<()> {
     for values in &op.tuples {
-        tuple_insert(cache, wal, &TupleInsert { rel_oid: op.rel_oid, values: values.clone() }).await?;
+        tuple_insert(
+            cache,
+            wal,
+            &TupleInsert {
+                rel_oid: op.rel_oid,
+                values: values.clone(),
+            },
+        )
+        .await?;
     }
     Ok(())
 }
 
-pub async fn heap_scan(cache: &SharedBufferCache, rel_oid: u32) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
-    let state = cache.get_relation_state(Oid(rel_oid)).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+pub async fn heap_scan(
+    cache: &SharedBufferCache,
+    rel_oid: u32,
+) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
+    let state = cache
+        .get_relation_state(Oid(rel_oid))
+        .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
@@ -146,26 +173,22 @@ pub async fn heap_scan(cache: &SharedBufferCache, rel_oid: u32) -> anyhow::Resul
 
     let mut rows = Vec::new();
     for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
-        let page = cache.storage.read_page(page_id)?;
-        let mut offset = 0;
-        while offset + 4 <= page.len() {
-            let len = u32::from_le_bytes([page[offset], page[offset+1], page[offset+2], page[offset+3]]) as usize;
-            if len == 0 || offset + 4 + len > page.len() {
-                break;
-            }
-            if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+len]) {
+        let page_data = cache.fetch_page(page_id)?;
+        let page = page_data.lock();
+        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page.data);
+
+        for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
+            if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
                 if !is_visible(&tup, &snapshot) {
-                    offset += 4 + len;
                     continue;
                 }
                 let tid = crate::types::ItemPointerData {
                     page_id,
-                    offset: offset as u16,
+                    offset: slot_idx as u16,
                 };
                 let values = decode_tuple_values(&tup, &rel.tuple_desc);
                 rows.push((tid, values));
             }
-            offset += 4 + len;
         }
     }
     Ok(rows)
@@ -176,39 +199,42 @@ pub async fn heap_scan_with_snapshot(
     rel_oid: u32,
     snapshot: &Snapshot,
 ) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
-    let state = cache.get_relation_state(Oid(rel_oid)).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+    let state = cache
+        .get_relation_state(Oid(rel_oid))
+        .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
     let mut rows = Vec::new();
     for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
-        let page = cache.storage.read_page(page_id)?;
-        let mut offset = 0;
-        while offset + 4 <= page.len() {
-            let len = u32::from_le_bytes([page[offset], page[offset+1], page[offset+2], page[offset+3]]) as usize;
-            if len == 0 || offset + 4 + len > page.len() {
-                break;
-            }
-            if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+len]) {
+        let page_data = cache.fetch_page(page_id)?;
+        let page = page_data.lock();
+        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page.data);
+
+        for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
+            if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
                 if !is_visible(&tup, snapshot) {
-                    offset += 4 + len;
                     continue;
                 }
                 let tid = crate::types::ItemPointerData {
                     page_id,
-                    offset: offset as u16,
+                    offset: slot_idx as u16,
                 };
                 let values = decode_tuple_values(&tup, &rel.tuple_desc);
                 rows.push((tid, values));
             }
-            offset += 4 + len;
         }
     }
     Ok(rows)
 }
 
-pub async fn slow_scan(cache: &SharedBufferCache, op: &SlowScan) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
-    let state = cache.get_relation_state(op.rel_oid).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+pub async fn slow_scan(
+    cache: &SharedBufferCache,
+    op: &SlowScan,
+) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
+    let state = cache
+        .get_relation_state(op.rel_oid)
+        .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
@@ -219,47 +245,43 @@ pub async fn slow_scan(cache: &SharedBufferCache, op: &SlowScan) -> anyhow::Resu
 
     let mut rows = Vec::new();
     for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
-        let page = cache.storage.read_page(page_id)?;
-        let mut offset = 0;
-        while offset + 4 <= page.len() {
-            let len = u32::from_le_bytes([page[offset], page[offset+1], page[offset+2], page[offset+3]]) as usize;
-            if len == 0 || offset + 4 + len > page.len() {
-                break;
-            }
-            if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+len]) {
+        let page_data = cache.storage.read_page(page_id)?;
+        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
+
+        for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
+            if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
                 if !is_visible(&tup, &snapshot) {
-                    offset += 4 + len;
                     continue;
                 }
                 let row = decode_tuple_values(&tup, &rel.tuple_desc);
-                
+
                 if let Some(filter) = &op.filter {
                     let filter_col = filter.column as usize;
                     if filter_col < row.len() {
                         let expected = String::from_utf8_lossy(&filter.value);
-                        if !row[filter_col].contains(&*expected) && row[filter_col] != expected.to_string() {
-                            offset += 4 + len;
+                        if !row[filter_col].contains(&*expected)
+                            && row[filter_col] != expected.to_string()
+                        {
                             continue;
                         }
                     }
                 }
                 let tid = crate::types::ItemPointerData {
                     page_id,
-                    offset: offset as u16,
+                    offset: slot_idx as u16,
                 };
                 rows.push((tid, row));
             }
-            offset += 4 + len;
         }
     }
     Ok(rows)
 }
 
-fn decode_tuple_values(tup: &Tuple, desc: &TupleDesc) -> Vec<String> {
+pub(crate) fn decode_tuple_values(tup: &Tuple, desc: &TupleDesc) -> Vec<String> {
     if tup.data.is_empty() {
         return vec![String::new(); desc.fields.len()];
     }
-    
+
     let mut values = Vec::new();
     let mut pos = 0;
     for (i, _field) in desc.fields.iter().enumerate() {
@@ -268,7 +290,9 @@ fn decode_tuple_values(tup: &Tuple, desc: &TupleDesc) -> Vec<String> {
             while pos < tup.data.len() && tup.data[pos] != 0 {
                 pos += 1;
             }
-            let val = std::str::from_utf8(&tup.data[start..pos]).unwrap_or_default().to_string();
+            let val = std::str::from_utf8(&tup.data[start..pos])
+                .unwrap_or_default()
+                .to_string();
             values.push(val);
             // Safety check: reached end without null byte and not last field
             if pos == tup.data.len() {
@@ -296,19 +320,15 @@ pub async fn index_scan(
     let storage = &cache.storage;
     let page_size: usize = 8192;
 
-    let root_page = (1u32..=4096u32)
-        .find_map(|pid| {
-            storage
-                .read_page(PageId(pid))
-                .ok()
-                .and_then(|data| {
-                    if !data.is_empty() && data[0] == 1 {
-                        Some(PageId(pid))
-                    } else {
-                        None
-                    }
-                })
-        });
+    let root_page = (1u32..=4096u32).find_map(|pid| {
+        storage.read_page(PageId(pid)).ok().and_then(|data| {
+            if !data.is_empty() && data[0] == 1 {
+                Some(PageId(pid))
+            } else {
+                None
+            }
+        })
+    });
 
     let Some(root) = root_page else {
         return Ok(vec![]);
@@ -317,7 +337,13 @@ pub async fn index_scan(
     let search_key: &[u8] = if scan_key.is_empty() { &[] } else { &scan_key };
     let mut results: Vec<(u32, u16)> = Vec::new();
 
-    let _ = walk_btree(cache.storage.as_ref(), root, search_key, page_size, &mut results);
+    let _ = walk_btree(
+        cache.storage.as_ref(),
+        root,
+        search_key,
+        page_size,
+        &mut results,
+    );
 
     Ok(results)
 }
@@ -369,18 +395,12 @@ fn walk_btree(
                 }
             }
         }
-        crate::btree::page::BTreePageType::Root
-        | crate::btree::page::BTreePageType::Internal => {
+        crate::btree::page::BTreePageType::Root | crate::btree::page::BTreePageType::Internal => {
             let mut descended = false;
             for (key, child_page, _) in &entries {
                 if search_key.is_empty() || search_key <= key.as_slice() {
-                    let _ = walk_btree(
-                        storage,
-                        PageId(*child_page),
-                        search_key,
-                        page_size,
-                        results,
-                    );
+                    let _ =
+                        walk_btree(storage, PageId(*child_page), search_key, page_size, results);
                     descended = true;
                     break;
                 }
@@ -407,7 +427,9 @@ pub async fn tuple_update(
     filter: Option<Filter>,
 ) -> anyhow::Result<u64> {
     let mut updated = 0u64;
-    let state = cache.get_relation_state(rel_oid).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+    let state = cache
+        .get_relation_state(rel_oid)
+        .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let pages;
     let tuple_desc;
     {
@@ -417,76 +439,58 @@ pub async fn tuple_update(
     }
 
     for &page_id in &pages {
-        let page = cache.storage.read_page(page_id)?;
-        let mut new_page = page.clone();
-        let mut offset = 0;
-        
-        // First pass: find all tuples to update and mark them as deleted
+        let page_data = cache.storage.read_page(page_id)?;
+        let mut heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
+
         let mut tuples_to_update = Vec::new();
-        while offset + 4 <= page.len() {
-            let old_len = u32::from_le_bytes([page[offset], page[offset+1], page[offset+2], page[offset+3]]) as usize;
-            if old_len == 0 || offset + 4 + old_len > page.len() {
-                break;
-            }
-            if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+old_len]) {
+        for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
+            if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
                 let row = decode_tuple_values(&tup, &tuple_desc);
                 let should_update = filter.as_ref().map_or(true, |f| {
                     let filter_col = f.column;
-                    filter_col < row.len() && row[filter_col] == String::from_utf8_lossy(&f.value).to_string()
+                    filter_col < row.len()
+                        && row[filter_col] == String::from_utf8_lossy(&f.value).to_string()
                 });
-                
+
                 if should_update {
                     if let Some(new_data) = build_updated_data(&tup.data, column_idx, new_value) {
-                        tuples_to_update.push((offset, old_len, tup.clone(), new_data));
+                        tuples_to_update.push((slot_idx, tup.clone(), new_data));
                     }
                 }
             }
-            offset += 4 + old_len;
         }
-        
-        // Second pass: apply updates
-        for (old_offset, old_len, mut tup, new_data) in tuples_to_update {
+
+        for (slot_idx, mut tup, new_data) in tuples_to_update {
             let xid = wal.allocate_xid();
-            
+
             // Mark old tuple as deleted
             tup.xmax = xid;
             let old_encoded = bincode::serialize(&tup)?;
-            new_page[old_offset + 4..old_offset + 4 + old_len].copy_from_slice(&old_encoded);
-            
-            // Insert new tuple version at end of page
-            let mut end_offset = 0;
-            while end_offset + 4 <= new_page.len() {
-                let len = u32::from_le_bytes([new_page[end_offset], new_page[end_offset+1], new_page[end_offset+2], new_page[end_offset+3]]) as usize;
-                if len == 0 || end_offset + 4 + len > new_page.len() {
-                    break;
-                }
-                end_offset += 4 + len;
-            }
-            
-            // Create new tuple with the updated data
+            heap_page.tuples[slot_idx] = old_encoded;
+
+            // Create new tuple version
             let mut new_tup = tup.clone();
             new_tup.xmin = xid;
             new_tup.xmax = 0;
             new_tup.data = new_data;
             let new_encoded = bincode::serialize(&new_tup)?;
-            
-            // Write length prefix + new tuple
-            let len_bytes = (new_encoded.len() as u32).to_le_bytes();
-            new_page[end_offset..end_offset + 4].copy_from_slice(&len_bytes);
-            new_page[end_offset + 4..end_offset + 4 + new_encoded.len()].copy_from_slice(&new_encoded);
-            
-            cache.storage.write_page(page_id, &new_page)?;
+
+            // Add new tuple to page
+            heap_page.add_tuple(&new_encoded);
+
+            cache.storage.write_page(page_id, &heap_page.serialize())?;
             {
                 let mut rel_state = state.lock();
                 rel_state.dirty_buffers.push(page_id);
             }
-            
+
             wal.append(&crate::wal::WALRecord::Update {
                 rel_oid,
                 page_id,
                 old_tuple: tup,
                 new_tuple: new_tup,
-            }).await?;
+            })
+            .await?;
             updated += 1;
         }
     }
@@ -500,7 +504,9 @@ pub async fn tuple_delete(
     filter: Option<Filter>,
 ) -> anyhow::Result<u64> {
     let mut deleted = 0u64;
-    let state = cache.get_relation_state(rel_oid).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+    let state = cache
+        .get_relation_state(rel_oid)
+        .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let pages;
     let tuple_desc;
     {
@@ -510,51 +516,43 @@ pub async fn tuple_delete(
     }
 
     for &page_id in &pages {
-        let page = cache.storage.read_page(page_id)?;
-        let mut new_page = page.clone();
-        let mut offset = 0;
-        
-        // First pass: find all tuples to delete
+        let page_data = cache.storage.read_page(page_id)?;
+        let mut heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
+
         let mut tuples_to_delete = Vec::new();
-        while offset + 4 <= page.len() {
-            let old_len = u32::from_le_bytes([page[offset], page[offset+1], page[offset+2], page[offset+3]]) as usize;
-            if old_len == 0 || offset + 4 + old_len > page.len() {
-                break;
-            }
-            if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+old_len]) {
+        for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
+            if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
                 let row = decode_tuple_values(&tup, &tuple_desc);
                 let should_delete = filter.as_ref().map_or(true, |f| {
                     let filter_col = f.column;
-                    filter_col < row.len() && row[filter_col] == String::from_utf8_lossy(&f.value).to_string()
+                    filter_col < row.len()
+                        && row[filter_col] == String::from_utf8_lossy(&f.value).to_string()
                 });
-                
+
                 if should_delete {
-                    tuples_to_delete.push((offset, old_len, tup.clone()));
+                    tuples_to_delete.push((slot_idx, tup.clone()));
                 }
             }
-            offset += 4 + old_len;
         }
-        
-        // Second pass: mark tuples as deleted
-        for (del_offset, del_len, mut tup) in tuples_to_delete {
+
+        for (slot_idx, mut tup) in tuples_to_delete {
             let xid = wal.allocate_xid();
             tup.xmax = xid;
             let encoded = bincode::serialize(&tup)?;
-            
-            // Overwrite the tuple in place (keep same length, just update xmax)
-            new_page[del_offset + 4..del_offset + 4 + del_len].copy_from_slice(&encoded);
-            
-            cache.storage.write_page(page_id, &new_page)?;
+            heap_page.tuples[slot_idx] = encoded;
+
+            cache.storage.write_page(page_id, &heap_page.serialize())?;
             {
                 let mut rel_state = state.lock();
                 rel_state.dirty_buffers.push(page_id);
             }
-            
+
             wal.append(&crate::wal::WALRecord::Delete {
                 rel_oid,
                 page_id,
                 tuple: tup,
-            }).await?;
+            })
+            .await?;
             deleted += 1;
         }
     }

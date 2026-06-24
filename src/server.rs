@@ -469,6 +469,36 @@ async fn execute_slow_scan(
     send_rows(cache, rel_oid, rows, socket).await
 }
 
+pub(crate) fn build_select_messages(result: &crate::executor::SelectResult) -> Vec<BackendMessage> {
+    let mut messages = Vec::new();
+
+    if result.rows.is_empty() {
+        messages.push(BackendMessage::RowDescriptionEmpty);
+        messages.push(BackendMessage::CommandComplete { tag: "SELECT 0".to_string() });
+        return messages;
+    }
+
+    let field_descs: Vec<crate::protocol::backend::FieldDescription> = result.columns.iter().enumerate().map(|(i, name)| {
+        crate::protocol::backend::FieldDescription {
+            name: name.clone(),
+            table_oid: crate::types::Oid(0),
+            column_attr: (i as i16) + 1,
+            type_oid: crate::types::Oid(25),
+            type_size: -1,
+            type_mod: -1,
+            format: 0,
+        }
+    }).collect();
+
+    messages.push(BackendMessage::RowDescription { fields: field_descs });
+    for row in &result.rows {
+        let values: Vec<Option<Vec<u8>>> = row.iter().map(|s| Some(s.as_bytes().to_vec())).collect();
+        messages.push(BackendMessage::DataRow { values });
+    }
+    messages.push(BackendMessage::CommandComplete { tag: format!("SELECT {}", result.rows.len()) });
+    messages
+}
+
 async fn send_rows(
     cache: &SharedBufferCache,
     rel_oid: u32,
@@ -630,8 +660,6 @@ async fn handle_select_statement(
     let mut cte_oids = Vec::new();
     if let Some(ref with) = select.with {
         for cte in &with.ctes {
-            // For now, just register the CTE name as a temporary relation
-            // The actual materialization will happen when the CTE query is referenced
             let cte_oid = catalog.allocate_oid();
             let cte_rel = crate::types::Relation::empty(&cte.name, vec![]);
             let mut rel_with_oid = cte_rel;
@@ -642,37 +670,14 @@ async fn handle_select_statement(
         }
     }
 
-    // Get table name from FROM clause
-    if let Some(ref from) = select.from {
-        if let Some(join) = from.joins.first() {
-            match &join.table {
-                crate::sql::ast::TableRef::Table(table_name) => {
-                    let table_str = table_name.parts.join(".");
-                    
-                    // Try to find relation in catalog (including CTEs)
-                    let rels = catalog.list_relations();
-                    if let Some(rel) = rels.iter().find(|r| r.name.to_uppercase() == table_str.to_uppercase()) {
-                        let rel_oid = rel.rel_oid.0;
-                        
-                        // Simple sequential scan for now
-                        if let Err(e) = execute_seq_scan(cache, rel_oid, socket).await {
-                            send_error(socket, e.to_string()).await;
-                        }
-                    } else {
-                        send_error(socket, format!("relation \"{}\" does not exist", table_str)).await;
-                    }
-                }
-                crate::sql::ast::TableRef::Subquery(_) => {
-                    send_error(socket, "subqueries not yet supported".to_string()).await;
-                }
-                crate::sql::ast::TableRef::Function(_) => {
-                    send_error(socket, "function calls not yet supported".to_string()).await;
-                }
-            }
+    match crate::executor::select::execute_select(select, cache, catalog).await {
+        Ok(result) => {
+            let messages = build_select_messages(&result);
+            let _ = socket.write_all(&encode_messages(&messages)).await;
         }
-    } else {
-        // SELECT without FROM - not supported yet
-        send_error(socket, "SELECT without FROM not yet supported".to_string()).await;
+        Err(e) => {
+            send_error(socket, e.to_string()).await;
+        }
     }
 
     // Clean up temporary CTE relations
@@ -1074,6 +1079,234 @@ async fn handle_explain_statement(
     socket: &mut tokio::net::TcpStream,
 ) {
     send_error(socket, "EXPLAIN not yet supported".to_string()).await;
+}
+
+pub(crate) fn evaluate_expr(expr: &crate::sql::ast::Expr, row: &[String], tuple_desc: Option<&crate::types::TupleDesc>) -> Option<String> {
+    match expr {
+        crate::sql::ast::Expr::Literal(lit) => Some(match lit {
+            crate::sql::ast::Literal::Number(n) => n.clone(),
+            crate::sql::ast::Literal::String(s) => s.clone(),
+            crate::sql::ast::Literal::Bool(b) => b.to_string(),
+            crate::sql::ast::Literal::Null => "NULL".to_string(),
+            crate::sql::ast::Literal::Blob(b) => format!("{:?}", b),
+            crate::sql::ast::Literal::Date(d) => d.clone(),
+            crate::sql::ast::Literal::Time(t) => t.clone(),
+            crate::sql::ast::Literal::Timestamp(t) => t.clone(),
+            crate::sql::ast::Literal::TimestampTz(t) => t.clone(),
+            crate::sql::ast::Literal::Interval(i) => i.clone(),
+            crate::sql::ast::Literal::Json(j) => j.clone(),
+            crate::sql::ast::Literal::JsonB(j) => j.clone(),
+            crate::sql::ast::Literal::Uuid(u) => u.clone(),
+            crate::sql::ast::Literal::Money(m) => m.clone(),
+            crate::sql::ast::Literal::Bit(b) => b.clone(),
+            crate::sql::ast::Literal::Hex(h) => h.clone(),
+        }),
+        crate::sql::ast::Expr::Identifier(col) => {
+            if let Some(desc) = tuple_desc {
+                if let Some((idx, _)) = desc.fields.iter().enumerate().find(|(_, f)| f.name.eq_ignore_ascii_case(col)) {
+                    row.get(idx).cloned()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        crate::sql::ast::Expr::BinaryOp { left, op, right } => {
+            let left_val = evaluate_expr(left, row, tuple_desc)?;
+            let right_val = evaluate_expr(right, row, tuple_desc)?;
+            let result: Option<String> = match op {
+                crate::sql::ast::BinaryOperator::Equals => Some((left_val == right_val).to_string()),
+                crate::sql::ast::BinaryOperator::NotEquals => Some((left_val != right_val).to_string()),
+                crate::sql::ast::BinaryOperator::LessThan => Some((left_val < right_val).to_string()),
+                crate::sql::ast::BinaryOperator::LessOrEqual => Some((left_val <= right_val).to_string()),
+                crate::sql::ast::BinaryOperator::GreaterThan => Some((left_val > right_val).to_string()),
+                crate::sql::ast::BinaryOperator::GreaterOrEqual => Some((left_val >= right_val).to_string()),
+                crate::sql::ast::BinaryOperator::And => {
+                    let l = left_val.parse::<bool>().ok()?;
+                    let r = right_val.parse::<bool>().ok()?;
+                    Some((l && r).to_string())
+                }
+                crate::sql::ast::BinaryOperator::Or => {
+                    let l = left_val.parse::<bool>().ok()?;
+                    let r = right_val.parse::<bool>().ok()?;
+                    Some((l || r).to_string())
+                }
+                crate::sql::ast::BinaryOperator::Plus => {
+                    let l = left_val.parse::<f64>().ok()?;
+                    let r = right_val.parse::<f64>().ok()?;
+                    Some(format!("{}", l + r))
+                }
+                crate::sql::ast::BinaryOperator::Minus => {
+                    let l = left_val.parse::<f64>().ok()?;
+                    let r = right_val.parse::<f64>().ok()?;
+                    Some(format!("{}", l - r))
+                }
+                crate::sql::ast::BinaryOperator::Multiply => {
+                    let l = left_val.parse::<f64>().ok()?;
+                    let r = right_val.parse::<f64>().ok()?;
+                    Some(format!("{}", l * r))
+                }
+                crate::sql::ast::BinaryOperator::Divide => {
+                    let l = left_val.parse::<f64>().ok()?;
+                    let r = right_val.parse::<f64>().ok()?;
+                    if r == 0.0 { return None; }
+                    Some(format!("{}", l / r))
+                }
+                crate::sql::ast::BinaryOperator::Modulo => {
+                    let l = left_val.parse::<f64>().ok()?;
+                    let r = right_val.parse::<f64>().ok()?;
+                    if r == 0.0 { return None; }
+                    Some(format!("{}", l % r))
+                }
+                crate::sql::ast::BinaryOperator::Like => {
+                    let pattern = right_val.replace("%", "");
+                    Some((left_val.contains(&pattern)).to_string())
+                }
+                crate::sql::ast::BinaryOperator::ILike => {
+                    let pattern = right_val.replace("%", "");
+                    Some((left_val.to_lowercase().contains(&pattern.to_lowercase())).to_string())
+                }
+                _ => None,
+            };
+            result
+        }
+        crate::sql::ast::Expr::UnaryOp { op, expr } => {
+            let val = evaluate_expr(expr, row, tuple_desc)?;
+            match op {
+                crate::sql::ast::UnaryOperator::Not => {
+                    let b = val.parse::<bool>().ok()?;
+                    Some((!b).to_string())
+                }
+                crate::sql::ast::UnaryOperator::Minus => {
+                    let n = val.parse::<f64>().ok()?;
+                    Some((-n).to_string())
+                }
+                crate::sql::ast::UnaryOperator::Plus => val.parse::<f64>().ok().map(|n| n.to_string()),
+                crate::sql::ast::UnaryOperator::BitwiseNot => {
+                    let n = val.parse::<i64>().ok()?;
+                    Some((!n).to_string())
+                }
+            }
+        }
+        crate::sql::ast::Expr::IsNull(inner) => {
+            let val = evaluate_expr(inner, row, tuple_desc)?
+                .trim()
+                .to_string();
+            Some((val.is_empty() || val.eq_ignore_ascii_case("NULL")).to_string())
+        }
+        crate::sql::ast::Expr::IsNotNull(inner) => {
+            let val = evaluate_expr(inner, row, tuple_desc)?
+                .trim()
+                .to_string();
+            Some((!val.is_empty() && !val.eq_ignore_ascii_case("NULL")).to_string())
+        }
+        crate::sql::ast::Expr::TypeCast { expr, .. } => evaluate_expr(expr, row, tuple_desc),
+        crate::sql::ast::Expr::QualifiedIdentifier { table: _, column } => {
+            if let Some(desc) = tuple_desc {
+                if let Some((idx, _)) = desc.fields.iter().enumerate().find(|(_, f)| f.name.eq_ignore_ascii_case(column)) {
+                    row.get(idx).cloned()
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        crate::sql::ast::Expr::Case { operand, when_clauses, else_clause } => {
+            let operand_val = operand.as_ref().and_then(|e| evaluate_expr(e, row, tuple_desc));
+            for when in when_clauses {
+                let cond_val = evaluate_expr(&when.when, row, tuple_desc)?;
+                let matches = match &operand_val {
+                    Some(op) => {
+                        cond_val == *op
+                    }
+                    None => {
+                        cond_val == "true" || cond_val == "t"
+                    }
+                };
+                if matches {
+                    return evaluate_expr(&when.then, row, tuple_desc);
+                }
+            }
+            if let Some(else_expr) = else_clause {
+                evaluate_expr(else_expr, row, tuple_desc)
+            } else {
+                Some("NULL".to_string())
+            }
+        }
+        crate::sql::ast::Expr::Function(func) => {
+            let name = func.name.parts.last().map(|s| s.to_uppercase()).unwrap_or_default();
+            let arg0 = func.args.first().and_then(|a| match a {
+                crate::sql::ast::FunctionArg::Expr(e) => evaluate_expr(e, row, tuple_desc),
+                crate::sql::ast::FunctionArg::Star => Some("*".to_string()),
+            });
+            let arg1 = func.args.get(1).and_then(|a| match a {
+                crate::sql::ast::FunctionArg::Expr(e) => evaluate_expr(e, row, tuple_desc),
+                crate::sql::ast::FunctionArg::Star => Some("*".to_string()),
+            });
+            let arg2 = func.args.get(2).and_then(|a| match a {
+                crate::sql::ast::FunctionArg::Expr(e) => evaluate_expr(e, row, tuple_desc),
+                crate::sql::ast::FunctionArg::Star => Some("*".to_string()),
+            });
+            match name.as_str() {
+                "COUNT" => Some("1".to_string()),
+                "SUM" | "AVG" | "MIN" | "MAX" => arg0,
+                "LENGTH" => arg0.map(|v| v.len().to_string()),
+                "UPPER" => arg0.map(|s| s.to_uppercase()),
+                "LOWER" => arg0.map(|s| s.to_lowercase()),
+                "TRIM" => arg0.map(|s| s.trim().to_string()),
+                "SUBSTRING" => {
+                    let s = arg0.unwrap_or_default();
+                    let start = arg1.unwrap_or("1".to_string()).parse::<usize>().unwrap_or(1);
+                    match arg2 {
+                        Some(len_str) => {
+                            let len = len_str.parse::<usize>().unwrap_or(0);
+                            Some(s.chars().skip(start.saturating_sub(1)).take(len).collect())
+                        }
+                        None => Some(s.chars().skip(start.saturating_sub(1)).collect()),
+                    }
+                }
+                "CONCAT" => {
+                    let mut parts = Vec::new();
+                    parts.extend(func.args.iter().filter_map(|a| match a {
+                        crate::sql::ast::FunctionArg::Expr(e) => evaluate_expr(e, row, tuple_desc),
+                        crate::sql::ast::FunctionArg::Star => Some("*".to_string()),
+                    }));
+                    Some(parts.join(""))
+                }
+                _ => arg0,
+            }
+        }
+        crate::sql::ast::Expr::Between { expr, low, high, negated } => {
+            let val = evaluate_expr(expr, row, tuple_desc)?;
+            let low_val = evaluate_expr(low, row, tuple_desc)?;
+            let high_val = evaluate_expr(high, row, tuple_desc)?;
+            let in_range = if let (Ok(v), Ok(l), Ok(h)) = (
+                val.parse::<f64>(),
+                low_val.parse::<f64>(),
+                high_val.parse::<f64>(),
+            ) {
+                v >= l && v <= h
+            } else {
+                val >= low_val && val <= high_val
+            };
+            Some((if *negated { !in_range } else { in_range }).to_string())
+        }
+        crate::sql::ast::Expr::InList { expr, negated, list } => {
+            let val = evaluate_expr(expr, row, tuple_desc)?;
+            let matches = list.iter().any(|e| evaluate_expr(e, row, tuple_desc) == Some(val.clone()));
+            Some((if *negated { !matches } else { matches }).to_string())
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn evaluate_where(where_clause: &crate::sql::ast::Expr, row: &[String], tuple_desc: Option<&crate::types::TupleDesc>) -> bool {
+    match evaluate_expr(where_clause, row, tuple_desc) {
+        Some(result) => result == "true" || result == "t",
+        None => false,
+    }
 }
 
 fn encode(msg: BackendMessage) -> Vec<u8> {

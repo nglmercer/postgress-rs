@@ -10,4 +10,7 @@ pub mod transaction;
 pub mod sql;
 pub mod suiteshell;
 pub mod server;
+
+#[cfg(test)]
+mod server_tests;
 pub mod error;

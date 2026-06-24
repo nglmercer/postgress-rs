@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 
+pub mod locks;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TransactionId(pub u32);
 

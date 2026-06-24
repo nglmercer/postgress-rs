@@ -203,6 +203,20 @@ impl SharedBufferCache {
         let mut rels = self.rels.write();
         rels.remove(&rel_oid);
     }
+
+    pub fn fetch_page(&self, page_id: crate::types::PageId) -> anyhow::Result<std::sync::Arc<parking_lot::Mutex<Buffer>>> {
+        let idx = self.pool.fetch_page(&*self.storage, page_id)?;
+        let buffers = self.pool.buffers.lock();
+        let buffer = &buffers[idx];
+        let data = std::sync::Arc::new(parking_lot::Mutex::new(Buffer {
+            page_id: buffer.page_id,
+            data: buffer.data.clone(),
+            is_dirty: buffer.is_dirty,
+            usage_count: buffer.usage_count,
+            pin_count: buffer.pin_count,
+        }));
+        Ok(data)
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
 # Full PostgreSQL Compatibility Plan
 
 ## Current State
-- **206 tests passing, 0 failures, 0 warnings**
+- **391 tests passing, 0 failures, 0 warnings**
 - Complete SQL parser with AST, CTE support, type casting, additional data types
 - Date/Time types and functions: NOW(), CURRENT_DATE/TIME/TIMESTAMP, EXTRACT, DATE_TRUNC, DATE_PART, AT TIME ZONE
 - Type casting for: BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMPTZ, INTERVAL, BIT, BIT VARYING, INET, CIDR, MACADDR, TSVECTOR, TSQUERY
@@ -102,16 +102,16 @@
 ## Milestone 3: Storage Engine (M4 from ROADMAP)
 
 ### 3.1 Heap Page Format
-- [ ] Page header with special space
-- [ ] Line pointer array (PD_LINEPOINTER)
-- [ ] Tuple headers with transaction visibility info
-- [ ] Free space tracking
+- [x] Page header with special space
+- [x] Line pointer array (PD_LINEPOINTER)
+- [x] Tuple headers with transaction visibility info
+- [x] Free space tracking
 - [ ] Page compaction (VACUUM)
 
 ### 3.2 Buffer Manager
+- [x] Buffer pins and reference counting
+- [x] Shared buffers with proper locking
 - [ ] Clock-sweep eviction algorithm (replace LRU)
-- [ ] Buffer pins and reference counting
-- [ ] Shared buffers with proper locking
 - [ ] Double-buffering for sequential scans
 - [ ] Background writer (bgwriter)
 - [ ] Checkpoint process
@@ -178,15 +178,15 @@
 ## Milestone 6: Query Execution (M7 from ROADMAP)
 
 ### 6.1 Executor Nodes
-- [ ] Nested Loop Join
+- [x] Nested Loop Join (INNER, LEFT, RIGHT, FULL, CROSS)
 - [ ] Hash Join
 - [ ] Merge Join
+- [x] Sort Aggregate (GROUP BY with aggregates)
 - [ ] Hash Aggregate
-- [ ] Sort Aggregate
 - [ ] Materialize node
-- [ ] Limit node
-- [ ] Unique node
-- [ ] WindowAgg node
+- [x] Limit node (LIMIT/OFFSET)
+- [x] Unique node (DISTINCT)
+- [x] WindowAgg node (ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD)
 
 ### 6.2 Query Planner
 - [ ] Cost-based optimizer (CBO)
