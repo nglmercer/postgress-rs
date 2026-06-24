@@ -136,7 +136,7 @@
 - [x] Table-level locks (ACCESS SHARE, ROW SHARE, ROW EXCLUSIVE, etc.)
 - [x] Row-level locks (FOR UPDATE, FOR SHARE, FOR KEY SHARE)
 - [x] Lock queue and deadlock detection
-- [ ] Advisory locks
+- [x] Advisory locks
 - [ ] Lock timeout and statement timeout
 
 ### 4.3 Snapshot Management
