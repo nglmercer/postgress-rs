@@ -418,7 +418,7 @@ pub struct Join {
     pub constraint: JoinConstraint,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JoinType {
     Inner,
     Left,

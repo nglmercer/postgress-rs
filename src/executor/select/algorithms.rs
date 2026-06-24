@@ -9,17 +9,21 @@ pub fn hash_join(
     on_expr: &Expr,
     join_type: JoinType,
     left_desc: &Option<TupleDesc>,
-    col_names: &[String],
+    _col_names: &[String],
 ) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
     let mut result = Vec::new();
-    let right_col_count = right.first().map(|(_, r)| r.len()).unwrap_or(0);
+    let right_col_count = if right.is_empty() {
+        left.first().map(|(_, l)| l.len()).unwrap_or(0)
+    } else {
+        right.first().map(|(_, r)| r.len()).unwrap_or(0)
+    };
 
     // Build hash table from right side
     let mut hash_table: HashMap<String, Vec<&Row>> = HashMap::new();
 
     for (_rtid, rrow) in right {
         // For equi-join on expression like "a.id = b.id", extract the key
-        if let Expr::BinaryOp { left, op: BinaryOperator::Equals, right: right_expr } = on_expr {
+        if let Expr::BinaryOp { left: _l, op: BinaryOperator::Equals, right: right_expr } = on_expr {
             if let Some(key_val) = crate::server::evaluate_expr(right_expr, rrow, left_desc.as_ref()) {
                 hash_table.entry(key_val).or_default().push(rrow);
             }
@@ -77,7 +81,11 @@ pub fn hash_join(
 
     // Handle FULL JOIN unmatched left rows
     if matches!(join_type, JoinType::Full) {
-        let right_col_count_inner = right.first().map(|(_, r)| r.len()).unwrap_or(0);
+        let right_col_count_inner = if right.is_empty() {
+            left.first().map(|(_, l)| l.len()).unwrap_or(0)
+        } else {
+            right.first().map(|(_, r)| r.len()).unwrap_or(0)
+        };
         for (ltid, lrow) in left {
             let mut matched = false;
             if let Expr::BinaryOp { left: left_expr, .. } = on_expr {
@@ -112,10 +120,14 @@ pub fn merge_join(
     on_expr: &Expr,
     join_type: JoinType,
     left_desc: &Option<TupleDesc>,
-    col_names: &[String],
+    _col_names: &[String],
 ) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
     let mut result = Vec::new();
-    let right_col_count = right.first().map(|(_, r)| r.len()).unwrap_or(0);
+    let right_col_count = if right.is_empty() {
+        left.first().map(|(_, l)| l.len()).unwrap_or(0)
+    } else {
+        right.first().map(|(_, r)| r.len()).unwrap_or(0)
+    };
 
     if left.is_empty() || right.is_empty() {
         // Handle empty inputs for LEFT/RIGHT/FULL joins
@@ -189,7 +201,7 @@ pub fn merge_join(
 
         if left_key == right_key {
             // Found matching keys - collect all matches
-            let start_i = i;
+            let _start_i = i;
             let start_j = j;
 
             // Find all left rows with this key
@@ -199,7 +211,7 @@ pub fn merge_join(
                 // Find all right rows with this key
                 let mut k = start_j;
                 while k < right_with_keys.len() && right_with_keys[k].2 == *left_key {
-                    let (rtid, rrow, _) = right_with_keys[k];
+                    let (_rtid, rrow, _) = right_with_keys[k];
                     let mut combined = lrow.clone();
                     combined.extend(rrow.clone());
                     result.push((ltid.clone(), combined));
@@ -216,7 +228,7 @@ pub fn merge_join(
             }
         } else if left_key < right_key {
             // Left key is smaller, advance left
-            if matches!(join_type, JoinType::Left) && !left_matched[i] {
+            if matches!(join_type, JoinType::Left | JoinType::Full) && !left_matched[i] {
                 let (ltid, lrow, _) = left_with_keys[i];
                 let mut combined = lrow.clone();
                 combined.extend(vec!["".to_string(); right_col_count]);
@@ -226,7 +238,7 @@ pub fn merge_join(
             i += 1;
         } else {
             // Right key is smaller, advance right
-            if matches!(join_type, JoinType::Right) && !right_matched[j] {
+            if matches!(join_type, JoinType::Right | JoinType::Full) && !right_matched[j] {
                 let (rtid, rrow, _) = right_with_keys[j];
                 let left_col_count = left.first().map(|(_, l)| l.len()).unwrap_or(0);
                 let mut combined = vec!["".to_string(); left_col_count];
@@ -271,7 +283,7 @@ pub fn merge_join(
 pub fn choose_join_algorithm(
     left_size: usize,
     right_size: usize,
-    join_type: JoinType,
+    _join_type: JoinType,
 ) -> JoinAlgorithm {
     // Use hash join for equi-joins when one side is small enough
     if left_size <= 1000 || right_size <= 1000 {
@@ -360,5 +372,251 @@ mod tests {
     fn test_choose_join_algorithm() {
         assert_eq!(choose_join_algorithm(100, 10000, JoinType::Inner), JoinAlgorithm::Hash);
         assert_eq!(choose_join_algorithm(10000, 10000, JoinType::Inner), JoinAlgorithm::Merge);
+    }
+
+    #[test]
+    fn test_hash_join_left() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["4", "Dave"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = hash_join(&left, &right, &on_expr, JoinType::Left, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].1[0], "1");
+        assert_eq!(result[0].1[3], "100");
+        assert_eq!(result[1].1[0], "2");
+        assert_eq!(result[1].1[3], "");
+        assert_eq!(result[2].1[0], "4");
+        assert_eq!(result[2].1[3], "");
+    }
+
+    #[test]
+    fn test_hash_join_right() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = hash_join(&left, &right, &on_expr, JoinType::Right, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1[0], "1");
+        assert_eq!(result[0].1[3], "100");
+        assert_eq!(result[1].1[0], "");
+        assert_eq!(result[1].1[3], "300");
+    }
+
+    #[test]
+    fn test_hash_join_full() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = hash_join(&left, &right, &on_expr, JoinType::Full, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_merge_join_left() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["4", "Dave"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = merge_join(&left, &right, &on_expr, JoinType::Left, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].1[0], "1");
+        assert_eq!(result[0].1[3], "100");
+        assert_eq!(result[1].1[0], "2");
+        assert_eq!(result[1].1[3], "");
+        assert_eq!(result[2].1[0], "4");
+        assert_eq!(result[2].1[3], "");
+    }
+
+    #[test]
+    fn test_merge_join_right() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = merge_join(&left, &right, &on_expr, JoinType::Right, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].1[0], "1");
+        assert_eq!(result[0].1[3], "100");
+        assert_eq!(result[1].1[0], "");
+        assert_eq!(result[1].1[3], "300");
+    }
+
+    #[test]
+    fn test_merge_join_full() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = merge_join(&left, &right, &on_expr, JoinType::Full, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_hash_join_multiple_matches() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["1", "200"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = hash_join(&left, &right, &on_expr, JoinType::Inner, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_join_multiple_matches() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+        ];
+        let right = vec![
+            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
+            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["1", "200"])),
+        ];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = merge_join(&left, &right, &on_expr, JoinType::Inner, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_hash_join_empty_inputs() {
+        let left: Vec<(ItemPointerData, Row)> = vec![];
+        let right: Vec<(ItemPointerData, Row)> = vec![];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = hash_join(&left, &right, &on_expr, JoinType::Inner, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_merge_join_empty_inputs() {
+        let left: Vec<(ItemPointerData, Row)> = vec![];
+        let right: Vec<(ItemPointerData, Row)> = vec![];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = merge_join(&left, &right, &on_expr, JoinType::Inner, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_merge_join_left_empty_right() {
+        let left = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
+        ];
+        let right: Vec<(ItemPointerData, Row)> = vec![];
+
+        let on_expr = Expr::BinaryOp {
+            left: Box::new(Expr::Identifier("id".to_string())),
+            op: BinaryOperator::Equals,
+            right: Box::new(Expr::Identifier("id".to_string())),
+        };
+
+        let desc = Some(make_desc());
+        let result = merge_join(&left, &right, &on_expr, JoinType::Left, &desc, &[]).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1[0], "1");
+        assert_eq!(result[0].1[2], "");
     }
 }
