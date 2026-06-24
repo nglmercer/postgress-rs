@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub mod jsonb;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct Oid(pub u32);
 
@@ -53,6 +55,12 @@ pub struct Relation {
     pub name: String,
     pub tuple_desc: TupleDesc,
     pub pages: Vec<PageId>,
+    #[serde(default)]
+    pub relpages: u32,
+    #[serde(default)]
+    pub reltuples: f64,
+    #[serde(default)]
+    pub relfrozenxid: u32,
 }
 
 impl Relation {
@@ -74,7 +82,16 @@ impl Relation {
             name: name.to_string(),
             tuple_desc,
             pages: vec![],
+            relpages: 0,
+            reltuples: 0.0,
+            relfrozenxid: 0,
         }
+    }
+
+    pub fn has_toast_columns(&self) -> bool {
+        self.tuple_desc.fields.iter().any(|attr| {
+            matches!(attr.type_oid.0, 25 | 1043 | 17 | 3802 | 114 | 1009)
+        })
     }
 }
 
