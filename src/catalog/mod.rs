@@ -123,6 +123,9 @@ impl Catalog {
             name: pg_class.name,
             tuple_desc: pg_class.tuple_desc,
             pages: pg_class.pages,
+            relpages: 0,
+            reltuples: 0.0,
+            relfrozenxid: 0,
         };
         self.create_relation(pg_class).await?;
 
@@ -138,6 +141,9 @@ impl Catalog {
             name: pg_attribute.name,
             tuple_desc: pg_attribute.tuple_desc,
             pages: pg_attribute.pages,
+            relpages: 0,
+            reltuples: 0.0,
+            relfrozenxid: 0,
         };
         self.create_relation(pg_attribute).await?;
 
@@ -151,6 +157,9 @@ impl Catalog {
             name: pg_type.name,
             tuple_desc: pg_type.tuple_desc,
             pages: pg_type.pages,
+            relpages: 0,
+            reltuples: 0.0,
+            relfrozenxid: 0,
         };
         self.create_relation(pg_type).await?;
 
@@ -164,6 +173,9 @@ impl Catalog {
             name: pg_index.name,
             tuple_desc: pg_index.tuple_desc,
             pages: pg_index.pages,
+            relpages: 0,
+            reltuples: 0.0,
+            relfrozenxid: 0,
         };
         self.create_relation(pg_index).await?;
 
