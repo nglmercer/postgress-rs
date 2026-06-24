@@ -316,8 +316,8 @@ pub async fn handle_statement(
         Statement::CreateSchema(_) => {
             send_error(socket, "CREATE SCHEMA not yet supported".to_string()).await;
         }
-        Statement::Set(_) => {
-            send_error(socket, "SET not yet supported".to_string()).await;
+        Statement::Set(set_stmt) => {
+            handle_set_statement(set_stmt, txn_mgr, current_xid, socket).await;
         }
         Statement::Merge(_) => {
             send_error(socket, "MERGE not yet supported".to_string()).await;
@@ -341,6 +341,8 @@ async fn handle_select_statement(
         let _ = wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await;
     }
 
+    let snapshot = current_xid.map(|xid| txn_mgr.get_snapshot_for_statement(xid));
+
     // Handle WITH (CTE) clause - register temporary relations for each CTE
     let mut cte_oids = Vec::new();
     if let Some(ref with) = select.with {
@@ -355,7 +357,7 @@ async fn handle_select_statement(
         }
     }
 
-    match crate::executor::select::execute_select(select, cache, catalog).await {
+    match crate::executor::select::execute_select_with_snapshot(select, cache, catalog, snapshot).await {
         Ok(result) => {
             let messages = build_select_messages(&result);
             let _ = socket.write_all(&encode_messages(&messages)).await;
@@ -764,4 +766,80 @@ async fn handle_explain_statement(
     socket: &mut tokio::net::TcpStream,
 ) {
     send_error(socket, "EXPLAIN not yet supported".to_string()).await;
+}
+
+async fn handle_set_statement(
+    set_stmt: &crate::sql::ast::SetStatement,
+    txn_mgr: &Arc<TransactionManager>,
+    current_xid: &Option<TransactionId>,
+    socket: &mut tokio::net::TcpStream,
+) {
+    use crate::sql::ast::SetValue;
+
+    let name = set_stmt.name.to_lowercase();
+    match name.as_str() {
+        "statement_timeout" => {
+            if let Some(xid) = current_xid {
+                let timeout_ms = match set_stmt.values.first() {
+                    Some(SetValue::Number(n)) => n.parse::<u64>().unwrap_or(0),
+                    Some(SetValue::Default) => 0,
+                    _ => 0,
+                };
+                let timeout = if timeout_ms == 0 {
+                    None
+                } else {
+                    Some(std::time::Duration::from_millis(timeout_ms))
+                };
+                if let Some(mut txn) = txn_mgr.get_transaction(*xid) {
+                    txn.timeout_config.statement_timeout = timeout;
+                }
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: "SET".to_string() },
+                    BackendMessage::ReadyForQuery { status: TransactionStatus::InTransaction },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            } else {
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: "SET".to_string() },
+                    BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            }
+        }
+        "lock_timeout" => {
+            if let Some(xid) = current_xid {
+                let timeout_ms = match set_stmt.values.first() {
+                    Some(SetValue::Number(n)) => n.parse::<u64>().unwrap_or(0),
+                    Some(SetValue::Default) => 0,
+                    _ => 0,
+                };
+                let timeout = if timeout_ms == 0 {
+                    None
+                } else {
+                    Some(std::time::Duration::from_millis(timeout_ms))
+                };
+                if let Some(mut txn) = txn_mgr.get_transaction(*xid) {
+                    txn.timeout_config.lock_timeout = timeout;
+                }
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: "SET".to_string() },
+                    BackendMessage::ReadyForQuery { status: TransactionStatus::InTransaction },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            } else {
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: "SET".to_string() },
+                    BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            }
+        }
+        _ => {
+            let messages = vec![
+                BackendMessage::CommandComplete { tag: "SET".to_string() },
+                BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
+            ];
+            let _ = socket.write_all(&encode_messages(&messages)).await;
+        }
+    }
 }

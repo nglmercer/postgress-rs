@@ -28,6 +28,9 @@ pub async fn execute_create_table(
                 .collect(),
         },
         pages: vec![],
+        relpages: 0,
+        reltuples: 0.0,
+        relfrozenxid: 0,
     };
     catalog.create_relation(rel).await?;
     Ok(())
