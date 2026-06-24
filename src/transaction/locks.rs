@@ -28,19 +28,38 @@ impl LockMode {
 
     pub fn conflicts_with(&self, other: &LockMode) -> bool {
         use LockMode::*;
-        match self {
-            AccessShare => matches!(other, Exclusive | AccessExclusive),
-            RowShare => matches!(other, RowExclusive | ShareUpdateExclusive | Exclusive | AccessExclusive),
-            RowExclusive => matches!(other, ShareUpdateExclusive | Share | ShareRowExclusive | Exclusive | AccessExclusive),
-            ShareUpdateExclusive => matches!(other, ShareUpdateExclusive | Share | ShareRowExclusive | Exclusive | AccessExclusive),
-            Share => matches!(other, RowExclusive | ShareUpdateExclusive | ShareRowExclusive | Exclusive | AccessExclusive),
-            ShareRowExclusive => matches!(other, RowExclusive | ShareUpdateExclusive | Share | ShareRowExclusive | Exclusive | AccessExclusive),
-            Exclusive => matches!(other, RowShare | RowExclusive | ShareUpdateExclusive | Share | ShareRowExclusive | Exclusive | AccessExclusive),
-            AccessExclusive => *other != AccessShare,
-            ForUpdate => matches!(other, ForUpdate | ForShare | ForNoKeyUpdate | ForKeyShare),
-            ForShare => matches!(other, ForUpdate | ForNoKeyUpdate | ForKeyShare),
-            ForNoKeyUpdate => matches!(other, ForUpdate | ForNoKeyUpdate),
-            ForKeyShare => matches!(other, ForUpdate),
+        match (self, other) {
+            // Table-level conflicts
+            (AccessShare, Exclusive) | (Exclusive, AccessShare) => true,
+            (AccessShare, AccessExclusive) | (AccessExclusive, AccessShare) => true,
+            (RowShare, RowExclusive) | (RowExclusive, RowShare) => true,
+            (RowShare, ShareUpdateExclusive) | (ShareUpdateExclusive, RowShare) => true,
+            (RowShare, Exclusive) | (Exclusive, RowShare) => true,
+            (RowShare, AccessExclusive) | (AccessExclusive, RowShare) => true,
+            (RowExclusive, ShareUpdateExclusive) | (ShareUpdateExclusive, RowExclusive) => true,
+            (RowExclusive, Share) | (Share, RowExclusive) => true,
+            (RowExclusive, ShareRowExclusive) | (ShareRowExclusive, RowExclusive) => true,
+            (RowExclusive, Exclusive) | (Exclusive, RowExclusive) => true,
+            (RowExclusive, AccessExclusive) | (AccessExclusive, RowExclusive) => true,
+            (ShareUpdateExclusive, Share) | (Share, ShareUpdateExclusive) => true,
+            (ShareUpdateExclusive, ShareRowExclusive) | (ShareRowExclusive, ShareUpdateExclusive) => true,
+            (ShareUpdateExclusive, Exclusive) | (Exclusive, ShareUpdateExclusive) => true,
+            (ShareUpdateExclusive, AccessExclusive) | (AccessExclusive, ShareUpdateExclusive) => true,
+            (Share, ShareRowExclusive) | (ShareRowExclusive, Share) => true,
+            (Share, Exclusive) | (Exclusive, Share) => true,
+            (Share, AccessExclusive) | (AccessExclusive, Share) => true,
+            (ShareRowExclusive, Exclusive) | (Exclusive, ShareRowExclusive) => true,
+            (ShareRowExclusive, AccessExclusive) | (AccessExclusive, ShareRowExclusive) => true,
+            (Exclusive, AccessExclusive) | (AccessExclusive, Exclusive) => true,
+            // Row-level conflicts
+            (ForUpdate, ForUpdate) | (ForUpdate, ForShare) | (ForShare, ForUpdate) => true,
+            (ForUpdate, ForNoKeyUpdate) | (ForNoKeyUpdate, ForUpdate) => true,
+            (ForUpdate, ForKeyShare) | (ForKeyShare, ForUpdate) => true,
+            (ForShare, ForNoKeyUpdate) | (ForNoKeyUpdate, ForShare) => true,
+            (ForShare, ForKeyShare) | (ForKeyShare, ForShare) => true,
+            (ForNoKeyUpdate, ForNoKeyUpdate) => true,
+            (ForKeyShare, ForKeyShare) => false,
+            _ => false,
         }
     }
 }
@@ -319,9 +338,13 @@ mod tests {
         let xid2 = TransactionId(2);
         let rel_oid = Oid(100);
 
+        // ForUpdate conflicts with ForUpdate
         assert!(mgr.acquire_row_lock(xid1, rel_oid, 1, 0, LockMode::ForUpdate).is_ok());
         assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForUpdate).is_err());
-        assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForKeyShare).is_ok());
+        // ForUpdate conflicts with ForKeyShare
+        assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForKeyShare).is_err());
+        // Different row should not conflict
+        assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 1, LockMode::ForUpdate).is_ok());
     }
 
     #[test]
