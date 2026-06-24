@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 
 pub mod locks;
+pub mod timeouts;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TransactionId(pub u32);
@@ -53,6 +54,7 @@ pub struct Transaction {
     pub isolation: IsolationLevel,
     pub state: TxnState,
     pub snapshot: Option<Snapshot>,
+    pub timeout_config: timeouts::TimeoutConfig,
     #[allow(dead_code)]
     locks: Vec<Oid>,
 }
@@ -64,6 +66,7 @@ impl Transaction {
             isolation,
             state: TxnState::Active,
             snapshot: None,
+            timeout_config: timeouts::TimeoutConfig::new(),
             locks: Vec::new(),
         }
     }
