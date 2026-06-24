@@ -11,11 +11,12 @@ pub struct Buffer {
 }
 
 pub struct BufferPool {
+    #[allow(dead_code)]
     pools: Vec<Mutex<Vec<Buffer>>>,
 }
 
 impl BufferPool {
-    pub fn new(pool_size: usize) -> Self {
+    pub fn new(_pool_size: usize) -> Self {
         Self { pools: vec![] }
     }
 
@@ -29,14 +30,15 @@ impl BufferPool {
 }
 
 pub struct MutableRelationState {
-    pub relation: crate::catalog::Relation,
+    pub relation: crate::types::Relation,
     pub dirty_buffers: Vec<PageId>,
 }
 
 pub struct SharedBufferCache {
     pub(crate) storage: Arc<dyn StorageTrait>,
+    #[allow(dead_code)]
     pool: BufferPool,
-    rels: RwLock<std::collections::HashMap<Oid, Mutex<MutableRelationState>>>,
+    rels: RwLock<std::collections::HashMap<Oid, Arc<Mutex<MutableRelationState>>>>,
 }
 
 impl SharedBufferCache {
@@ -48,30 +50,30 @@ impl SharedBufferCache {
         }
     }
 
-    pub fn get_relation_mut(&self, rel_oid: Oid) -> anyhow::Result<Option<parking_lot::MutexGuard<'_, MutableRelationState>>> {
+    pub fn get_relation_state(&self, rel_oid: Oid) -> Option<Arc<Mutex<MutableRelationState>>> {
         let rels = self.rels.read();
-        Ok(rels.get(&rel_oid).map(|m| m.lock()))
+        rels.get(&rel_oid).cloned()
     }
 
     pub fn sync_from_catalog(&self, catalog: &crate::catalog::Catalog) {
         let mut rels = self.rels.write();
         for rel in catalog.list_relations() {
             rels.entry(rel.rel_oid).or_insert_with(|| {
-                Mutex::new(MutableRelationState {
+                Arc::new(Mutex::new(MutableRelationState {
                     relation: rel,
                     dirty_buffers: vec![],
-                })
+                }))
             });
         }
     }
 
-    pub fn register_relation(&self, rel: crate::catalog::Relation) {
+    pub fn register_relation(&self, rel: crate::types::Relation) {
         let mut rels = self.rels.write();
         rels.entry(rel.rel_oid).or_insert_with(|| {
-            Mutex::new(MutableRelationState {
+            Arc::new(Mutex::new(MutableRelationState {
                 relation: rel,
                 dirty_buffers: vec![],
-            })
+            }))
         });
     }
 

@@ -56,6 +56,8 @@ fn parse_query(s: &str) -> Option<Query> {
         parse_create_table(s)
     } else if s.starts_with("DROP TABLE") {
         parse_drop_table(s)
+    } else if s.starts_with("CREATE INDEX") {
+        parse_create_index(s)
     } else {
         None
     }
@@ -63,36 +65,34 @@ fn parse_query(s: &str) -> Option<Query> {
 
 fn parse_select(s: &str) -> Option<Query> {
     let after_select = s.strip_prefix("SELECT")?.trim();
-    let (columns, after_columns) = if after_select == "*" {
-        (vec![], after_select)
+    
+    let (columns, table_and_where) = if after_select.starts_with('*') {
+        let after_star = after_select[1..].trim();
+        let after_from = after_star.strip_prefix("FROM")?;
+        (vec![], after_from.trim())
     } else {
         let parts: Vec<&str> = after_select.splitn(2, "FROM").collect();
         if parts.len() < 2 {
             return None;
         }
         let cols = parts[0].trim().split(',').map(|s| s.trim().to_string()).collect();
-        let after = parts[1];
-        (cols, after)
+        (cols, parts[1].trim())
     };
-    
-    if let Some(after_from) = after_columns.strip_prefix("FROM") {
-        let after_from = after_from.trim();
-        let (table_name, where_clause) = if let Some(idx) = after_from.find("WHERE") {
-            let table = after_from[..idx].trim().to_string();
-            let where_part = after_from[idx..].trim().to_string();
-            (table, Some(where_part))
-        } else {
-            (after_from.trim().to_string(), None)
-        };
-        
-        let table_oid = Oid(fnv_hash(&table_name));
-        return Some(Query::Select { 
-            table: table_oid, 
-            where_clause, 
-            columns 
-        });
-    }
-    None
+
+    let (table_name, where_clause) = if let Some(idx) = table_and_where.find("WHERE") {
+        let table = table_and_where[..idx].trim().to_string();
+        let where_part = table_and_where[idx..].trim().to_string();
+        (table, Some(where_part))
+    } else {
+        (table_and_where.trim().to_string(), None)
+    };
+
+    let table_oid = Oid(fnv_hash(&table_name));
+    Some(Query::Select {
+        table: table_oid,
+        where_clause,
+        columns,
+    })
 }
 
 fn parse_insert(s: &str) -> Option<Query> {
@@ -143,6 +143,27 @@ fn parse_drop_table(s: &str) -> Option<Query> {
     let after_drop = s.strip_prefix("DROP TABLE")?.trim();
     let table_name = after_drop.trim().trim_end_matches(';').trim().to_string();
     Some(Query::DropTable { name: table_name })
+}
+
+fn parse_create_index(s: &str) -> Option<Query> {
+    // CREATE INDEX index_name ON table_name (column_name)
+    let after_index = s.strip_prefix("CREATE INDEX")?.trim();
+    let parts: Vec<&str> = after_index.splitn(2, "ON").collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let index_name = parts[0].trim().to_string();
+    let after_on = parts[1].trim();
+    let paren_pos = after_on.find('(')?;
+    let table_name = after_on[..paren_pos].trim().trim_end_matches(';').trim().to_string();
+    let col_str = after_on[paren_pos..].trim_start_matches('(').trim_end_matches(')').trim_end_matches(';').trim();
+    let column_name = col_str.to_string();
+
+    Some(Query::CreateIndex {
+        name: index_name,
+        table: table_name,
+        column: column_name,
+    })
 }
 
 fn parse_update(s: &str) -> Option<Query> {

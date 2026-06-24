@@ -77,3 +77,66 @@ impl Relation {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_oid_equality() {
+        assert_eq!(Oid(1), Oid(1));
+        assert_ne!(Oid(1), Oid(2));
+    }
+
+    #[test]
+    fn test_oid_default() {
+        assert_eq!(Oid::default(), Oid(0));
+    }
+
+    #[test]
+    fn test_page_id_default() {
+        assert_eq!(PageId::default(), PageId(0));
+    }
+
+    #[test]
+    fn test_slot_id_default() {
+        assert_eq!(SlotId::default(), SlotId(0));
+    }
+
+    #[test]
+    fn test_item_pointer_display() {
+        let tip = ItemPointerData { page_id: PageId(3), offset: 7 };
+        assert_eq!(format!("{}", tip), "(3,7)");
+    }
+
+    #[test]
+    fn test_relation_empty() {
+        let rel = Relation::empty("users", vec![("id", Oid(23)), ("name", Oid(25))]);
+        assert_eq!(rel.rel_oid, Oid(0));
+        assert_eq!(rel.name, "users");
+        assert_eq!(rel.tuple_desc.fields.len(), 2);
+        assert_eq!(rel.tuple_desc.fields[0].name, "id");
+        assert_eq!(rel.tuple_desc.fields[0].type_oid, Oid(23));
+        assert_eq!(rel.tuple_desc.fields[1].name, "name");
+        assert!(rel.pages.is_empty());
+    }
+
+    #[test]
+    fn test_relation_empty_no_columns() {
+        let rel = Relation::empty("empty", vec![]);
+        assert!(rel.tuple_desc.fields.is_empty());
+    }
+
+    #[test]
+    fn test_attribute() {
+        let attr = Attribute {
+            name: "col".to_string(),
+            type_oid: Oid(23),
+            attnum: 0,
+            typmod: -1,
+        };
+        assert_eq!(attr.name, "col");
+        assert_eq!(attr.type_oid, Oid(23));
+        assert_eq!(attr.attnum, 0);
+    }
+}

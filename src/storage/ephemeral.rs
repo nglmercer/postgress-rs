@@ -18,9 +18,7 @@ impl EphemeralStorage {
 impl StorageTrait for EphemeralStorage {
     fn read_page(&self, page_id: PageId) -> anyhow::Result<Vec<u8>> {
         let pages = self.pages.read();
-        pages.get(&page_id).cloned().ok_or_else(|| {
-            anyhow::anyhow!("Page {} not found in ephemeral storage", page_id.0)
-        })
+        Ok(pages.get(&page_id).cloned().unwrap_or_else(|| vec![0u8; 8192]))
     }
 
     fn write_page(&self, page_id: PageId, data: &[u8]) -> anyhow::Result<()> {

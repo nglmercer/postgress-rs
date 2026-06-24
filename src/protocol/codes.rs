@@ -18,6 +18,11 @@ pub enum Query {
     DropTable {
         name: String,
     },
+    CreateIndex {
+        name: String,
+        table: String,
+        column: String,
+    },
     Update {
         table: Oid,
         column: String,

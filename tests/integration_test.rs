@@ -1,7 +1,8 @@
-use postgress_rs::types::{Oid, PageId, Tuple, TupleDesc, Attribute, Relation};
+use postgress_rs::types::{Oid, PageId, Relation};
 use postgress_rs::storage::ephemeral::EphemeralStorage;
-use postgress_rs::storage::{StorageTrait};
-use postgress_rs::executor::heap::{tuple_insert, tuple_insert_bulk, TupleInsert, TupleInsertBulk};
+use postgress_rs::storage::StorageTrait;
+use postgress_rs::buffer_cache::SharedBufferCache;
+use postgress_rs::executor::heap::{tuple_insert, TupleInsert, heap_scan};
 
 #[test]
 fn test_oid_eq() {
@@ -12,8 +13,8 @@ fn test_oid_eq() {
 #[test]
 fn test_relation_empty() {
     let rel = Relation::empty("users", vec![
-        ("id", Oid(23)),  // INT4OID
-        ("name", Oid(25)), // TEXTOID
+        ("id", Oid(23)),
+        ("name", Oid(25)),
     ]);
     assert_eq!(rel.name, "users");
     assert_eq!(rel.tuple_desc.fields.len(), 2);
@@ -36,37 +37,34 @@ async fn test_ephemeral_storage_roundtrip() {
 #[tokio::test]
 async fn test_tuple_insert_and_read() {
     let storage = std::sync::Arc::new(EphemeralStorage::new());
-    let _cache = postgress_rs::buffer_cache::SharedBufferCache::new(storage.clone());
-    let wal = postgress_rs::wal::WAL::new(storage.clone(), 1024);
+    let wal = postgress_rs::wal::WAL::new(1024);
     let catalog = postgress_rs::catalog::Catalog::new(storage.clone());
+    let cache = std::sync::Arc::new(SharedBufferCache::new(storage.clone()));
     
-    // Register cache so catalog can sync relations to buffer cache
-    catalog.register_cache(_cache.clone());
+    catalog.register_cache(cache.clone());
     
-    // Bootstrap a relation first
     let rel = Relation::empty("test_table", vec![
         ("id", Oid(23)),
         ("val", Oid(25)),
     ]);
     let rel_oid = catalog.create_relation(rel).await.unwrap();
     
-    // Insert a tuple
+    // Verify relation is in cache
+    assert!(cache.get_relation_state(rel_oid).is_some(), "Relation should be in cache after create");
+    
     tuple_insert(
-        &_cache,
+        &cache,
         &wal,
         &TupleInsert {
             rel_oid,
-            values: vec![postgress_rs::types::SlotId(1), postgress_rs::types::SlotId(2)],
+            values: vec![b"1".to_vec(), b"hello".to_vec()],
         },
     ).await.unwrap();
     
-    // Verify page was written
-    let pages = catalog.get_relation(rel_oid).await.unwrap().unwrap().pages;
-    assert!(!pages.is_empty());
-    for page in &pages {
-        let data = storage.read_page(*page).unwrap();
-        assert!(data.iter().any(|&b| b != 0), "Page should contain non-zero data after insert");
-    }
+    let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
+    assert_eq!(rows.len(), 1, "Expected 1 row, got {}", rows.len());
+    assert_eq!(rows[0].1[0], "1");
+    assert_eq!(rows[0].1[1], "hello");
 }
 
 #[test]
@@ -77,4 +75,51 @@ fn test_storage_trait_object() {
     storage.write_page(page, &data).unwrap();
     let read = storage.read_page(page).unwrap();
     assert_eq!(read, data);
+}
+
+#[tokio::test]
+async fn test_multiple_inserts_scan() {
+    let storage = std::sync::Arc::new(EphemeralStorage::new());
+    let wal = postgress_rs::wal::WAL::new(1024);
+    let catalog = postgress_rs::catalog::Catalog::new(storage.clone());
+    let cache = std::sync::Arc::new(SharedBufferCache::new(storage.clone()));
+    
+    catalog.register_cache(cache.clone());
+    
+    let rel = Relation::empty("multi_table", vec![
+        ("id", Oid(23)),
+        ("name", Oid(25)),
+    ]);
+    let rel_oid = catalog.create_relation(rel).await.unwrap();
+    
+    for i in 0..5 {
+        tuple_insert(
+            &cache,
+            &wal,
+            &TupleInsert {
+                rel_oid,
+                values: vec![i.to_string().into_bytes(), format!("name_{}", i).into_bytes()],
+            },
+        ).await.unwrap();
+    }
+    
+    let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
+    assert_eq!(rows.len(), 5);
+}
+
+#[tokio::test]
+async fn test_heap_scan_empty() {
+    let storage = std::sync::Arc::new(EphemeralStorage::new());
+    let catalog = postgress_rs::catalog::Catalog::new(storage.clone());
+    let cache = std::sync::Arc::new(SharedBufferCache::new(storage.clone()));
+    
+    catalog.register_cache(cache.clone());
+    
+    let rel = Relation::empty("empty_table", vec![
+        ("id", Oid(23)),
+    ]);
+    let rel_oid = catalog.create_relation(rel).await.unwrap();
+    
+    let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
+    assert_eq!(rows.len(), 0);
 }

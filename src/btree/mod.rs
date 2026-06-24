@@ -3,6 +3,7 @@ pub mod scan;
 pub mod insert;
 pub mod search;
 
+use crate::types::PageId;
 pub use page::{BTreePage, BTreePageType, IndexTuple, BTreeMetaPage};
 pub use scan::{BTreeScan, ScanDirection};
 pub use insert::btree_insert;

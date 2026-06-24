@@ -1,6 +1,6 @@
 use crate::types::PageId;
 use crate::btree::page::{BTreePage, BTreePageType, IndexTuple};
-use crate::btree::insert::{deserialize_page, serialize_page};
+use crate::btree::insert::read_page as btree_read_page;
 use crate::storage::StorageTrait;
 use anyhow::Context;
 
@@ -64,11 +64,7 @@ fn read_page(
     page_id: PageId,
     page_size: usize,
 ) -> anyhow::Result<BTreePage> {
-    let data = storage.read_page(page_id)?;
-    if data.is_empty() || data.len() < 16 {
-        return Ok(BTreePage::new(BTreePageType::Leaf, page_id));
-    }
-    deserialize_page(page_id, &data)
+    btree_read_page(storage, page_id, page_size)
 }
 
 #[cfg(test)]
@@ -76,10 +72,11 @@ mod tests {
     use super::*;
     use crate::btree::page::BTreePage;
     use crate::storage::ephemeral::EphemeralStorage;
+    use crate::types::Oid;
 
     #[test]
     fn test_leaf_search_basic() {
-        let storage = EphemeralStorage::new(4096);
+        let storage = EphemeralStorage::new();
         let page_id = PageId(1);
         let page_size = 4096;
 
@@ -109,18 +106,19 @@ mod tests {
 
     #[test]
     fn test_search_descends_two_level_tree() {
-        let storage = EphemeralStorage::new(8192);
-        let page_size = 8192;
-        let capacity = page_size / 64;
+        let storage = EphemeralStorage::new();
+        let page_size: usize = 8192;
+        let _capacity = page_size / 64;
 
         // Build a multi-level tree by inserting enough tuples to cause splits
+        let capacity = page_size / 64;
         let mut allocator: Vec<PageId> =
-            (2u32..(capacity * 3)).map(PageId).collect();
+            (2u32..((capacity * 3) as u32)).map(PageId).collect();
         let mut next = move || allocator.pop().unwrap();
 
-        let root = PageId(1);
+        let mut root = PageId(1);
         for i in 0u32..=(capacity as u32) {
-            let _ = crate::btree::insert::btree_insert_multipage(
+            root = crate::btree::insert::btree_insert_multipage(
                 &storage,
                 root,
                 IndexTuple {
@@ -130,7 +128,7 @@ mod tests {
                 },
                 page_size,
                 &mut next,
-            );
+            ).unwrap();
         }
 
         // Search for a key that definitely exists
@@ -147,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_search_empty_root() {
-        let storage = EphemeralStorage::new(4096);
+        let storage = EphemeralStorage::new();
         let empty_root = PageId(99);
         let result = btree_search(&storage, empty_root, b"x", 4096).unwrap();
         assert!(result.is_empty());
@@ -155,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_search_multiple_matches_at_leaf() {
-        let storage = EphemeralStorage::new(4096);
+        let storage = EphemeralStorage::new();
         let page_id = PageId(10);
 
         let mut page = BTreePage::new(BTreePageType::Leaf, page_id);

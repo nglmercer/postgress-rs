@@ -78,3 +78,125 @@ impl BTreeMetaPage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_tuple(key: &[u8], page: u32, offset: u16) -> IndexTuple {
+        IndexTuple {
+            key: key.to_vec(),
+            heap_pointer: (page, offset),
+            heap_oid: Oid(0),
+        }
+    }
+
+    #[test]
+    fn test_new_page() {
+        let page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        assert_eq!(page.page_type, BTreePageType::Leaf);
+        assert_eq!(page.page_id, PageId(1));
+        assert_eq!(page.level, 0);
+        assert!(page.keys.is_empty());
+    }
+
+    #[test]
+    fn test_insert_sorted_single() {
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        page.insert_sorted(make_tuple(b"banana", 10, 0));
+        assert_eq!(page.keys.len(), 1);
+        assert_eq!(page.keys[0].key, b"banana");
+    }
+
+    #[test]
+    fn test_insert_sorted_maintains_order() {
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        page.insert_sorted(make_tuple(b"cherry", 3, 0));
+        page.insert_sorted(make_tuple(b"apple", 1, 0));
+        page.insert_sorted(make_tuple(b"banana", 2, 0));
+        page.insert_sorted(make_tuple(b"date", 4, 0));
+
+        assert_eq!(page.keys.len(), 4);
+        assert_eq!(page.keys[0].key, b"apple");
+        assert_eq!(page.keys[1].key, b"banana");
+        assert_eq!(page.keys[2].key, b"cherry");
+        assert_eq!(page.keys[3].key, b"date");
+    }
+
+    #[test]
+    fn test_insert_sorted_duplicate_key() {
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        page.insert_sorted(make_tuple(b"a", 1, 0));
+        page.insert_sorted(make_tuple(b"a", 2, 0));
+        assert_eq!(page.keys.len(), 2);
+    }
+
+    #[test]
+    fn test_is_full() {
+        let page_size = 128;
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        assert!(!page.is_full(page_size));
+        // capacity = 128/64 = 2
+        page.insert_sorted(make_tuple(b"a", 1, 0));
+        assert!(!page.is_full(page_size));
+        page.insert_sorted(make_tuple(b"b", 2, 0));
+        assert!(page.is_full(page_size));
+    }
+
+    #[test]
+    fn test_split_at() {
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        page.insert_sorted(make_tuple(b"a", 1, 0));
+        page.insert_sorted(make_tuple(b"b", 2, 0));
+        page.insert_sorted(make_tuple(b"c", 3, 0));
+        page.insert_sorted(make_tuple(b"d", 4, 0));
+
+        let right = page.split_at(2);
+        assert_eq!(page.keys.len(), 2);
+        assert_eq!(right.keys.len(), 2);
+        assert_eq!(page.keys[0].key, b"a");
+        assert_eq!(page.keys[1].key, b"b");
+        assert_eq!(right.keys[0].key, b"c");
+        assert_eq!(right.keys[1].key, b"d");
+    }
+
+    #[test]
+    fn test_split_preserves_level() {
+        let mut page = BTreePage::new(BTreePageType::Internal, PageId(1));
+        page.level = 3;
+        page.insert_sorted(make_tuple(b"x", 1, 0));
+
+        let right = page.split_at(0);
+        assert_eq!(right.level, 3);
+    }
+
+    #[test]
+    fn test_split_at_zero() {
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        page.insert_sorted(make_tuple(b"a", 1, 0));
+        let right = page.split_at(0);
+        assert!(page.keys.is_empty());
+        assert_eq!(right.keys.len(), 1);
+    }
+
+    #[test]
+    fn test_split_at_len() {
+        let mut page = BTreePage::new(BTreePageType::Leaf, PageId(1));
+        page.insert_sorted(make_tuple(b"a", 1, 0));
+        page.insert_sorted(make_tuple(b"b", 2, 0));
+        let right = page.split_at(2);
+        assert_eq!(page.keys.len(), 2);
+        assert!(right.keys.is_empty());
+    }
+
+    #[test]
+    fn test_meta_page() {
+        let meta = BTreeMetaPage::new(PageId(1));
+        assert_eq!(meta.magic, 0x805842);
+        assert_eq!(meta.version, 1);
+        assert_eq!(meta.root_page, PageId(1));
+        assert!(meta.fast_root.is_none());
+        assert_eq!(meta.height, 1);
+        assert_eq!(meta.page_size, 8192);
+    }
+}

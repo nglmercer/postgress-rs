@@ -1,13 +1,23 @@
-use crate::types::{Oid, Relation};
+use crate::types::{Oid, PageId, Relation};
 use crate::storage::StorageTrait;
 use crate::buffer_cache::SharedBufferCache;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use parking_lot::RwLock;
 
+#[derive(Debug, Clone)]
+pub struct IndexInfo {
+    pub index_oid: Oid,
+    pub rel_oid: Oid,
+    pub column_name: String,
+    pub root_page: PageId,
+}
+
 pub struct Catalog {
+    #[allow(dead_code)]
     storage: Arc<dyn StorageTrait>,
     relations: RwLock<std::collections::HashMap<Oid, Relation>>,
+    indexes: RwLock<Vec<IndexInfo>>,
     next_oid: AtomicU32,
     cache: RwLock<Option<Arc<SharedBufferCache>>>,
 }
@@ -17,6 +27,7 @@ impl Catalog {
         Self {
             storage,
             relations: RwLock::new(std::collections::HashMap::new()),
+            indexes: RwLock::new(Vec::new()),
             next_oid: AtomicU32::new(10000),
             cache: RwLock::new(None),
         }
@@ -35,6 +46,7 @@ impl Catalog {
         if rel.rel_oid == Oid(0) {
             rel.rel_oid = self.allocate_oid();
         }
+        let oid = rel.rel_oid;
         let mut rels = self.relations.write();
         rels.insert(rel.rel_oid, rel.clone());
         drop(rels);
@@ -43,7 +55,7 @@ impl Catalog {
             cache.register_relation(rel);
         }
 
-        Ok(rel.rel_oid)
+        Ok(oid)
     }
 
     pub async fn get_relation(&self, rel_oid: Oid) -> anyhow::Result<Option<Relation>> {
@@ -64,6 +76,38 @@ impl Catalog {
     pub fn list_relations(&self) -> Vec<Relation> {
         let rels = self.relations.read();
         rels.values().cloned().collect()
+    }
+
+    pub fn get_relation_by_name(&self, name: &str) -> anyhow::Result<Option<Relation>> {
+        let rels = self.relations.read();
+        Ok(rels.values().find(|r| r.name == name).cloned())
+    }
+
+    pub async fn create_index(&self, name: &str, rel_oid: Oid, column_name: String) -> anyhow::Result<()> {
+        let index_oid = self.allocate_oid();
+        let info = IndexInfo {
+            index_oid,
+            rel_oid,
+            column_name: column_name.clone(),
+            root_page: PageId::default(),
+        };
+        self.register_index(info);
+        let _ = rel_oid;
+        let _ = name;
+        let _ = column_name;
+        Ok(())
+    }
+
+    pub fn register_index(&self, info: IndexInfo) {
+        let mut indexes = self.indexes.write();
+        indexes.push(info);
+    }
+
+    pub fn find_index(&self, rel_oid: Oid, column_name: &str) -> Option<IndexInfo> {
+        let indexes = self.indexes.read();
+        indexes.iter()
+            .find(|i| i.rel_oid == rel_oid && i.column_name == column_name)
+            .cloned()
     }
 
     pub async fn bootstrap(&self) -> anyhow::Result<()> {
