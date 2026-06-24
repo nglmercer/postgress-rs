@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod jsonb;
+pub mod tsvector;
+pub mod tsquery;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct Oid(pub u32);
