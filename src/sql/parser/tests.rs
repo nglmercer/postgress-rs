@@ -1,103 +1,7 @@
-mod token;
-mod select;
-mod dml;
-mod ddl;
-mod expr;
-mod data_type;
-mod transaction;
-
-use crate::sql::ast::*;
-pub(crate) use token::{Token, tokenize};
-
-pub struct Parser {
-    tokens: Vec<Token>,
-    pos: usize,
-}
-
-impl Parser {
-    pub fn new(sql: &str) -> Self {
-        let tokens = tokenize(sql);
-        Self { tokens, pos: 0 }
-    }
-
-    pub fn parse(sql: &str) -> anyhow::Result<Statement> {
-        let mut parser = Self::new(sql);
-        parser.parse_statement()
-    }
-
-    fn peek(&self) -> &Token {
-        self.tokens.get(self.pos).unwrap_or(&Token::Eof)
-    }
-
-    fn advance(&mut self) -> Token {
-        let token = self.tokens.get(self.pos).cloned().unwrap_or(Token::Eof);
-        if self.pos < self.tokens.len() {
-            self.pos += 1;
-        }
-        token
-    }
-
-    fn expect(&mut self, expected: &Token) -> anyhow::Result<()> {
-        let token = self.advance();
-        if &token != expected {
-            anyhow::bail!("expected {:?}, got {:?}", expected, token);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn expect_keyword(&mut self, keyword: &str) -> anyhow::Result<()> {
-        match self.advance() {
-            Token::Keyword(k) if k.to_uppercase() == keyword.to_uppercase() => Ok(()),
-            other => anyhow::bail!("expected keyword '{}', got {:?}", keyword, other),
-        }
-    }
-
-    pub(crate) fn expect_ident(&mut self) -> anyhow::Result<String> {
-        match self.advance() {
-            Token::Ident(s) => Ok(s),
-            Token::Keyword(k) => Ok(k),
-            other => anyhow::bail!("expected identifier, got {:?}", other),
-        }
-    }
-
-    fn parse_statement(&mut self) -> anyhow::Result<Statement> {
-        let first = self.peek().clone();
-        match first {
-            Token::Keyword(k) => match k.to_uppercase().as_str() {
-                "SELECT" => Ok(Statement::Select(self.parse_select()?)),
-                "WITH" => Ok(Statement::Select(self.parse_with_select()?)),
-                "INSERT" => Ok(Statement::Insert(self.parse_insert()?)),
-                "UPDATE" => Ok(Statement::Update(self.parse_update()?)),
-                "DELETE" => Ok(Statement::Delete(self.parse_delete()?)),
-                "CREATE" => self.parse_create(),
-                "ALTER" => self.parse_alter(),
-                "DROP" => self.parse_drop(),
-                "BEGIN" | "START" => Ok(Statement::Begin(self.parse_begin()?)),
-                "COMMIT" => { self.advance(); Ok(Statement::Commit) }
-                "ROLLBACK" | "ABORT" => { self.advance(); Ok(Statement::Rollback) }
-                "EXPLAIN" => {
-                    self.advance();
-                    Ok(Statement::Explain(Box::new(self.parse_statement()?)))
-                }
-                _ => anyhow::bail!("unexpected keyword: {}", k),
-            },
-            Token::LParen => {
-                let stmt = self.parse_statement()?;
-                Ok(stmt)
-            }
-            _ => anyhow::bail!("unexpected token: {:?}", first),
-        }
-    }
-
-    pub(crate) fn advance_ident(&mut self, s: String) -> String {
-        self.advance();
-        s
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::sql::parser::Parser;
+    use crate::sql::ast::*;
 
     #[test]
     fn test_simple_select() {
@@ -523,6 +427,8 @@ mod tests {
         }
     }
 
+    // ========== Date/Time Type Tests ==========
+
     #[test]
     fn test_date_type() {
         let stmt = Parser::parse("CREATE TABLE t (d DATE)").unwrap();
@@ -610,6 +516,8 @@ mod tests {
             _ => panic!("expected CreateTable"),
         }
     }
+
+    // ========== Date/Time Function Tests ==========
 
     #[test]
     fn test_now_function() {
@@ -948,6 +856,8 @@ mod tests {
         }
     }
 
+    // ========== AT TIME ZONE Tests ==========
+
     #[test]
     fn test_at_time_zone() {
         let stmt = Parser::parse("SELECT ts AT TIME ZONE 'UTC' FROM events").unwrap();
@@ -982,6 +892,8 @@ mod tests {
             _ => panic!("expected Select"),
         }
     }
+
+    // ========== New Type Casting Tests ==========
 
     #[test]
     fn test_cast_to_boolean() {
@@ -1255,6 +1167,8 @@ mod tests {
         }
     }
 
+    // ========== New Data Type Tests ==========
+
     #[test]
     fn test_inet_type() {
         let stmt = Parser::parse("CREATE TABLE t (addr INET)").unwrap();
@@ -1353,6 +1267,8 @@ mod tests {
             _ => panic!("expected CreateTable"),
         }
     }
+
+    // ========== Complex Date/Time Expression Tests ==========
 
     #[test]
     fn test_date_cast_with_pg_shorthand() {
@@ -1458,26 +1374,249 @@ mod tests {
             ("SECOND", DatePart::Second),
             ("DOW", DatePart::Dow),
             ("DOY", DatePart::Doy),
-            ("EPOCH", DatePart::Epoch),
+            ("ISODOW", DatePart::IsoDow),
             ("WEEK", DatePart::Week),
             ("QUARTER", DatePart::Quarter),
+            ("EPOCH", DatePart::Epoch),
+            ("ISOYEAR", DatePart::IsoYear),
             ("TIMEZONE", DatePart::Timezone),
+            ("TIMEZONE_HOUR", DatePart::TimezoneHour),
+            ("TIMEZONE_MINUTE", DatePart::TimezoneMinute),
         ];
-        for (name, expected) in parts {
-            let sql = format!("SELECT EXTRACT({} FROM ts)", name);
+
+        for (part_str, expected) in parts {
+            let sql = format!("SELECT EXTRACT({} FROM ts)", part_str);
             let stmt = Parser::parse(&sql).unwrap();
             match stmt {
                 Statement::Select(sel) => {
                     match &sel.select_list[0] {
                         SelectItem::Expr(Expr::Extract { field, .. }) => {
-                            assert!(std::mem::discriminant(field) == std::mem::discriminant(&expected),
-                                "Expected {:?}, got {:?}", expected, field);
+                            assert_eq!(*field, expected, "Failed for part: {}", part_str);
                         }
-                        other => panic!("expected Extract, got {:?}", other),
+                        other => panic!("expected Extract for part {}, got {:?}", part_str, other),
                     }
                 }
-                _ => panic!("expected Select"),
+                _ => panic!("expected Select for part {}", part_str),
             }
+        }
+    }
+
+    #[test]
+    fn test_date_part_all_parts() {
+        let parts = vec![
+            ("YEAR", DatePart::Year),
+            ("MONTH", DatePart::Month),
+            ("DAY", DatePart::Day),
+            ("HOUR", DatePart::Hour),
+            ("MINUTE", DatePart::Minute),
+            ("SECOND", DatePart::Second),
+        ];
+
+        for (part_str, expected) in parts {
+            let sql = format!("SELECT DATE_PART('{}', ts)", part_str);
+            let stmt = Parser::parse(&sql).unwrap();
+            match stmt {
+                Statement::Select(sel) => {
+                    match &sel.select_list[0] {
+                        SelectItem::Expr(Expr::Extract { field, .. }) => {
+                            assert_eq!(*field, expected, "Failed for part: {}", part_str);
+                        }
+                        other => panic!("expected Extract for part {}, got {:?}", part_str, other),
+                    }
+                }
+                _ => panic!("expected Select for part {}", part_str),
+            }
+        }
+    }
+
+    #[test]
+    fn test_date_trunc_parts() {
+        let parts = vec![
+            ("hour", DatePart::Hour),
+            ("day", DatePart::Day),
+            ("week", DatePart::Week),
+            ("month", DatePart::Month),
+            ("quarter", DatePart::Quarter),
+            ("year", DatePart::Year),
+        ];
+
+        for (part_str, expected) in parts {
+            let sql = format!("SELECT DATE_TRUNC('{}', ts)", part_str);
+            let stmt = Parser::parse(&sql).unwrap();
+            match stmt {
+                Statement::Select(sel) => {
+                    match &sel.select_list[0] {
+                        SelectItem::Expr(Expr::DateTrunc { field, .. }) => {
+                            assert_eq!(*field, expected, "Failed for part: {}", part_str);
+                        }
+                        other => panic!("expected DateTrunc for part {}, got {:?}", part_str, other),
+                    }
+                }
+                _ => panic!("expected Select for part {}", part_str),
+            }
+        }
+    }
+
+    #[test]
+    fn test_create_table_with_all_date_types() {
+        let stmt = Parser::parse(
+            "CREATE TABLE events (
+                id SERIAL PRIMARY KEY,
+                event_date DATE,
+                event_time TIME,
+                event_timetz TIMETZ,
+                event_ts TIMESTAMP,
+                event_tstz TIMESTAMPTZ,
+                duration INTERVAL
+            )"
+        ).unwrap();
+        match stmt {
+            Statement::CreateTable(create) => {
+                assert_eq!(create.columns.len(), 7);
+                assert_eq!(create.columns[1].data_type, DataType::Date);
+                assert_eq!(create.columns[2].data_type, DataType::Time);
+                assert_eq!(create.columns[3].data_type, DataType::TimeTz);
+                assert_eq!(create.columns[4].data_type, DataType::Timestamp);
+                assert_eq!(create.columns[5].data_type, DataType::TimestampTz);
+                assert_eq!(create.columns[6].data_type, DataType::Interval);
+            }
+            _ => panic!("expected CreateTable"),
+        }
+    }
+
+    #[test]
+    fn test_create_table_with_network_types() {
+        let stmt = Parser::parse(
+            "CREATE TABLE hosts (
+                ip INET,
+                network CIDR,
+                mac MACADDR
+            )"
+        ).unwrap();
+        match stmt {
+            Statement::CreateTable(create) => {
+                assert_eq!(create.columns.len(), 3);
+                assert_eq!(create.columns[0].data_type, DataType::Inet);
+                assert_eq!(create.columns[1].data_type, DataType::Cidr);
+                assert_eq!(create.columns[2].data_type, DataType::MacAddr);
+            }
+            _ => panic!("expected CreateTable"),
+        }
+    }
+
+    #[test]
+    fn test_create_table_with_bit_types() {
+        let stmt = Parser::parse(
+            "CREATE TABLE bitfield (
+                flag BIT(1),
+                bits BIT(8),
+                var_bits BIT VARYING(64)
+            )"
+        ).unwrap();
+        match stmt {
+            Statement::CreateTable(create) => {
+                assert_eq!(create.columns.len(), 3);
+                assert_eq!(create.columns[0].data_type, DataType::Bit(1));
+                assert_eq!(create.columns[1].data_type, DataType::Bit(8));
+                assert_eq!(create.columns[2].data_type, DataType::BitVarying(64));
+            }
+            _ => panic!("expected CreateTable"),
+        }
+    }
+
+    #[test]
+    fn test_create_table_with_fulltext_types() {
+        let stmt = Parser::parse(
+            "CREATE TABLE articles (
+                content TSVECTOR,
+                search_query TSQUERY
+            )"
+        ).unwrap();
+        match stmt {
+            Statement::CreateTable(create) => {
+                assert_eq!(create.columns.len(), 2);
+                assert_eq!(create.columns[0].data_type, DataType::TsVector);
+                assert_eq!(create.columns[1].data_type, DataType::TsQuery);
+            }
+            _ => panic!("expected CreateTable"),
+        }
+    }
+
+    // ========== Complex Combined Tests ==========
+
+    #[test]
+    fn test_complex_date_query() {
+        let stmt = Parser::parse(
+            "SELECT 
+                id,
+                created_at::date as date_only,
+                EXTRACT(YEAR FROM created_at) as year,
+                EXTRACT(MONTH FROM created_at) as month,
+                DATE_TRUNC('day', created_at) as day_start
+            FROM events 
+            WHERE created_at > '2023-01-01'::date
+            ORDER BY created_at"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 5);
+                assert!(sel.where_clause.is_some());
+                assert_eq!(sel.order_by.len(), 1);
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_at_time_zone_complex() {
+        let stmt = Parser::parse(
+            "SELECT 
+                created_at AT TIME ZONE 'UTC' as utc_time,
+                created_at AT TIME ZONE 'US/Eastern' as eastern_time
+            FROM events"
+        ).unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.select_list.len(), 2);
+                for item in &sel.select_list {
+                    match item {
+                        SelectItem::ExprAs { expr: Expr::AtTimeZone { .. }, .. } => {}
+                        other => panic!("expected ExprAtTimeZone, got {:?}", other),
+                    }
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_insert_with_date_cast() {
+        let stmt = Parser::parse(
+            "INSERT INTO events (name, event_date, event_time) 
+            VALUES ('meeting', '2023-06-15'::date, '14:30:00'::time)"
+        ).unwrap();
+        match stmt {
+            Statement::Insert(ins) => {
+                assert_eq!(ins.table.parts, vec!["events"]);
+                assert!(ins.columns.is_some());
+                assert_eq!(ins.columns.as_ref().unwrap().len(), 3);
+            }
+            _ => panic!("expected Insert"),
+        }
+    }
+
+    #[test]
+    fn test_update_with_date_cast() {
+        let stmt = Parser::parse(
+            "UPDATE events SET event_date = '2023-12-25'::date WHERE id = 1"
+        ).unwrap();
+        match stmt {
+            Statement::Update(upd) => {
+                assert_eq!(upd.table.parts, vec!["events"]);
+                assert_eq!(upd.set_clauses.len(), 1);
+                assert!(upd.where_clause.is_some());
+            }
+            _ => panic!("expected Update"),
         }
     }
 }
