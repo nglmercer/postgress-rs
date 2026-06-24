@@ -161,9 +161,9 @@
 - [x] Hash index scans
 
 ### 5.3 GIN (Generalized Inverted Index)
-- [ ] GIN for array operations
-- [ ] GIN for full-text search
-- [ ] GIN for JSONB containment
+- [x] GIN for array operations
+- [x] GIN for full-text search
+- [x] GIN for JSONB containment
 
 ### 5.4 GiST (Generalized Search Tree)
 - [ ] GiST for geometric types
