@@ -111,7 +111,7 @@
 ### 3.2 Buffer Manager
 - [x] Buffer pins and reference counting
 - [x] Shared buffers with proper locking
-- [ ] Clock-sweep eviction algorithm (replace LRU)
+- [x] Clock-sweep eviction algorithm (replace LRU)
 - [ ] Double-buffering for sequential scans
 - [ ] Background writer (bgwriter)
 - [ ] Checkpoint process
@@ -179,11 +179,11 @@
 
 ### 6.1 Executor Nodes
 - [x] Nested Loop Join (INNER, LEFT, RIGHT, FULL, CROSS)
-- [ ] Hash Join
-- [ ] Merge Join
+- [x] Hash Join
+- [x] Merge Join
 - [x] Sort Aggregate (GROUP BY with aggregates)
-- [ ] Hash Aggregate
-- [ ] Materialize node
+- [x] Hash Aggregate
+- [x] Materialize node
 - [x] Limit node (LIMIT/OFFSET)
 - [x] Unique node (DISTINCT)
 - [x] WindowAgg node (ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD)

@@ -49,6 +49,66 @@ impl<'a> ExecContext<'a> {
             return rows;
         }
 
+        let hash_threshold = 1000;
+        if rows.len() > hash_threshold {
+            self.hash_aggregate(rows, group_by, select_list)
+        } else {
+            self.sort_aggregate(rows, group_by, select_list)
+        }
+    }
+
+    pub fn hash_aggregate(
+        &self,
+        rows: Vec<(ItemPointerData, Row)>,
+        group_by: &[Expr],
+        select_list: &[SelectItem],
+    ) -> Vec<(ItemPointerData, Row)> {
+        if group_by.is_empty() && rows.is_empty() {
+            return vec![];
+        }
+
+        let mut groups: HashMap<Vec<String>, Vec<Row>> = HashMap::new();
+
+        for (_tid, row) in &rows {
+            let key: Vec<String> = if group_by.is_empty() {
+                vec!["__all__".to_string()]
+            } else {
+                group_by.iter().map(|gb| {
+                    crate::server::evaluate_expr(gb, row, self.tuple_desc.as_ref())
+                        .unwrap_or_default()
+                }).collect()
+            };
+            groups.entry(key).or_default().push(row.clone());
+        }
+
+        let mut result = Vec::new();
+        for (_group_key, group_rows) in groups {
+            let mut result_row = Row::new();
+            for item in select_list {
+                let val = self.evaluate_select_item_with_group(item, &group_rows);
+                result_row.push(val);
+            }
+            let tid = ItemPointerData { page_id: PageId(0), offset: 0 };
+            result.push((tid, result_row));
+        }
+
+        result
+    }
+
+    pub fn sort_aggregate(
+        &self,
+        rows: Vec<(ItemPointerData, Row)>,
+        group_by: &[Expr],
+        select_list: &[SelectItem],
+    ) -> Vec<(ItemPointerData, Row)> {
+        if group_by.is_empty() && rows.is_empty() {
+            return vec![];
+        }
+
+        if group_by.is_empty() && !self.has_aggregates(select_list) {
+            return rows;
+        }
+
         let mut groups: HashMap<Vec<String>, Vec<Row>> = HashMap::new();
 
         for (_tid, row) in &rows {
@@ -286,5 +346,154 @@ impl<'a> ExecContext<'a> {
             }
             _ => "NULL".to_string(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::ephemeral::EphemeralStorage;
+    use crate::buffer_cache::SharedBufferCache;
+    use crate::catalog::Catalog;
+    use crate::types::{TupleDesc, Attribute, Oid};
+    use std::sync::Arc;
+
+    fn make_row(values: &[&str]) -> Row {
+        values.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn make_desc() -> TupleDesc {
+        TupleDesc {
+            fields: vec![
+                Attribute { name: "id".to_string(), type_oid: Oid(23), attnum: 1, typmod: -1 },
+                Attribute { name: "dept".to_string(), type_oid: Oid(25), attnum: 2, typmod: -1 },
+                Attribute { name: "salary".to_string(), type_oid: Oid(23), attnum: 3, typmod: -1 },
+            ],
+        }
+    }
+
+    fn setup() -> (Arc<SharedBufferCache>, Arc<Catalog>) {
+        let storage: Arc<dyn crate::storage::StorageTrait> = Arc::new(EphemeralStorage::new());
+        let cache = Arc::new(SharedBufferCache::new(storage.clone()));
+        let catalog = Arc::new(Catalog::new(storage.clone()));
+        (cache, catalog)
+    }
+
+    #[test]
+    fn test_hash_aggregate_count() {
+        let (cache, catalog) = setup();
+        let mut ctx = ExecContext::new(&cache, &catalog);
+        ctx.tuple_desc = Some(make_desc());
+
+        let rows = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "eng", "100"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "eng", "200"])),
+            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "sales", "150"])),
+        ];
+
+        let group_by = vec![Expr::Identifier("dept".to_string())];
+        let select_list = vec![
+            SelectItem::ExprAs {
+                expr: Expr::Identifier("dept".to_string()),
+                alias: "dept".to_string(),
+            },
+            SelectItem::ExprAs {
+                expr: Expr::Function(Box::new(FunctionCall {
+                    name: ObjectName::new(vec!["COUNT".to_string()]),
+                    args: vec![FunctionArg::Star],
+                    filter: None,
+                    over: None,
+                })),
+                alias: "count".to_string(),
+            },
+        ];
+
+        let result = ctx.hash_aggregate(rows, &group_by, &select_list);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_hash_aggregate_sum() {
+        let (cache, catalog) = setup();
+        let mut ctx = ExecContext::new(&cache, &catalog);
+        ctx.tuple_desc = Some(make_desc());
+
+        let rows = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "eng", "100"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "eng", "200"])),
+            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "sales", "150"])),
+        ];
+
+        let group_by = vec![Expr::Identifier("dept".to_string())];
+        let select_list = vec![
+            SelectItem::ExprAs {
+                expr: Expr::Identifier("dept".to_string()),
+                alias: "dept".to_string(),
+            },
+            SelectItem::ExprAs {
+                expr: Expr::Function(Box::new(FunctionCall {
+                    name: ObjectName::new(vec!["SUM".to_string()]),
+                    args: vec![FunctionArg::Expr(Expr::Identifier("salary".to_string()))],
+                    filter: None,
+                    over: None,
+                })),
+                alias: "total".to_string(),
+            },
+        ];
+
+        let result = ctx.hash_aggregate(rows, &group_by, &select_list);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_sort_aggregate_count() {
+        let (cache, catalog) = setup();
+        let mut ctx = ExecContext::new(&cache, &catalog);
+        ctx.tuple_desc = Some(make_desc());
+
+        let rows = vec![
+            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "eng", "100"])),
+            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "eng", "200"])),
+            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "sales", "150"])),
+        ];
+
+        let group_by = vec![Expr::Identifier("dept".to_string())];
+        let select_list = vec![
+            SelectItem::ExprAs {
+                expr: Expr::Identifier("dept".to_string()),
+                alias: "dept".to_string(),
+            },
+            SelectItem::ExprAs {
+                expr: Expr::Function(Box::new(FunctionCall {
+                    name: ObjectName::new(vec!["COUNT".to_string()]),
+                    args: vec![FunctionArg::Star],
+                    filter: None,
+                    over: None,
+                })),
+                alias: "count".to_string(),
+            },
+        ];
+
+        let result = ctx.sort_aggregate(rows, &group_by, &select_list);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_hash_aggregate_empty_input() {
+        let (cache, catalog) = setup();
+        let mut ctx = ExecContext::new(&cache, &catalog);
+        ctx.tuple_desc = Some(make_desc());
+
+        let rows: Vec<(ItemPointerData, Row)> = vec![];
+        let group_by = vec![Expr::Identifier("dept".to_string())];
+        let select_list = vec![
+            SelectItem::ExprAs {
+                expr: Expr::Identifier("dept".to_string()),
+                alias: "dept".to_string(),
+            },
+        ];
+
+        let result = ctx.hash_aggregate(rows, &group_by, &select_list);
+        assert_eq!(result.len(), 0);
     }
 }

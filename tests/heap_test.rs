@@ -447,3 +447,43 @@ async fn test_heap_scan_with_snapshot() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].1[1], "alice");
 }
+
+#[tokio::test]
+async fn test_vacuum_relation() {
+    let (_, wal, cache, catalog) = setup().await;
+    let rel_oid = create_test_table(&cache, &catalog).await;
+
+    // Insert a tuple (creates transaction xid = 1)
+    tuple_insert(&cache, &wal, &TupleInsert {
+        rel_oid,
+        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+    }).await.unwrap();
+
+    // Delete it (creates transaction xid = 2)
+    tuple_delete(&cache, &wal, rel_oid, Some(Filter {
+        column: 0,
+        value: b"1".to_vec(),
+    })).await.unwrap();
+
+    // Verify it's no longer visible
+    let snapshot = postgress_rs::transaction::Snapshot {
+        xid: postgress_rs::transaction::TransactionId(10),
+        active_xids: vec![],
+    };
+    let rows = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot).await.unwrap();
+    assert_eq!(rows.len(), 0);
+
+    // Run vacuum (oldest_xmin is 5, since deletion xid is 2 < 5, it will be reclaimed)
+    let reclaimed = vacuum_relation(&cache, rel_oid, 5).await.unwrap();
+    assert_eq!(reclaimed, 1);
+
+    // Insert a new tuple, verifying it is successfully inserted and visible
+    tuple_insert(&cache, &wal, &TupleInsert {
+        rel_oid,
+        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+    }).await.unwrap();
+
+    let rows2 = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot).await.unwrap();
+    assert_eq!(rows2.len(), 1);
+    assert_eq!(rows2[0].1[1], "bob");
+}

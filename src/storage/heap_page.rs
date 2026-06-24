@@ -111,23 +111,40 @@ impl HeapPage {
     pub fn serialize(&self) -> Vec<u8> {
         let mut page = vec![0u8; PAGE_SIZE];
 
+        // Write tuples (from end of page backwards) and compute new line pointers
+        let mut line_pointers = self.line_pointers.clone();
+        let mut tuple_offset = PAGE_SIZE;
+        for i in 0..line_pointers.len() {
+            let lp = &mut line_pointers[i];
+            if lp.lp_flags == LP_NORMAL {
+                if i < self.tuples.len() {
+                    let tuple_data = &self.tuples[i];
+                    if !tuple_data.is_empty() {
+                        tuple_offset -= tuple_data.len();
+                        lp.lp_offset = tuple_offset as u16;
+                        page[tuple_offset..tuple_offset + tuple_data.len()].copy_from_slice(tuple_data);
+                    }
+                }
+            } else {
+                lp.lp_offset = 0;
+            }
+        }
+
+        // Update header fields before serializing the header
+        let mut header = self.header.clone();
+        header.pd_lower = (PAGE_HEADER_SIZE + line_pointers.len() * LINE_POINTER_SIZE) as u16;
+        header.pd_upper = tuple_offset as u16;
+
         // Write header
-        let header_bytes = self.header.serialize();
+        let header_bytes = header.serialize();
         page[0..PAGE_HEADER_SIZE].copy_from_slice(&header_bytes);
 
         // Write line pointers
         let mut offset = PAGE_HEADER_SIZE;
-        for lp in &self.line_pointers {
+        for lp in &line_pointers {
             let lp_bytes = lp.serialize();
             page[offset..offset + LINE_POINTER_SIZE].copy_from_slice(&lp_bytes);
             offset += LINE_POINTER_SIZE;
-        }
-
-        // Write tuples (from end of page backwards)
-        let mut tuple_offset = PAGE_SIZE;
-        for tuple_data in &self.tuples {
-            tuple_offset -= tuple_data.len();
-            page[tuple_offset..tuple_offset + tuple_data.len()].copy_from_slice(tuple_data);
         }
 
         page
@@ -146,19 +163,21 @@ impl HeapPage {
             line_pointers.push(lp);
         }
 
-        let mut tuples = Vec::new();
+        let mut tuples = vec![Vec::new(); line_pointers.len()];
         for i in 0..line_pointers.len() {
             let lp = &line_pointers[i];
             if lp.lp_flags == LP_NORMAL {
                 let tuple_start = lp.lp_offset as usize;
-                let tuple_end = if i > 0 {
-                    line_pointers[i - 1].lp_offset as usize
-                } else {
-                    header.pd_special as usize
-                };
+                let mut tuple_end = header.pd_special as usize;
+                for j in (0..i).rev() {
+                    if line_pointers[j].lp_flags == LP_NORMAL {
+                        tuple_end = line_pointers[j].lp_offset as usize;
+                        break;
+                    }
+                }
                 if tuple_start < tuple_end && tuple_end <= PAGE_SIZE {
                     let tuple_data = data[tuple_start..tuple_end].to_vec();
-                    tuples.push(tuple_data);
+                    tuples[i] = tuple_data;
                 }
             }
         }
@@ -172,22 +191,66 @@ impl HeapPage {
 
     pub fn add_tuple(&mut self, tuple_data: &[u8]) -> Option<u16> {
         let tuple_len = tuple_data.len();
-        let new_lower = self.header.pd_lower as usize + LINE_POINTER_SIZE;
+        
+        let mut slot_index = None;
+        for i in 0..self.line_pointers.len() {
+            if self.line_pointers[i].lp_flags == LP_DEAD {
+                slot_index = Some(i as u16);
+                break;
+            }
+        }
+
+        let new_lower = if slot_index.is_none() {
+            self.header.pd_lower as usize + LINE_POINTER_SIZE
+        } else {
+            self.header.pd_lower as usize
+        };
         let new_upper = self.header.pd_upper as usize - tuple_len;
 
         if new_lower > new_upper {
             return None;
         }
 
-        let slot_index = self.line_pointers.len() as u16;
-        let lp = LinePointer::new(new_upper as u16);
-        self.line_pointers.push(lp);
-        self.tuples.push(tuple_data.to_vec());
+        let slot = if let Some(idx) = slot_index {
+            self.line_pointers[idx as usize] = LinePointer::new(new_upper as u16);
+            if (idx as usize) < self.tuples.len() {
+                self.tuples[idx as usize] = tuple_data.to_vec();
+            }
+            idx
+        } else {
+            let idx = self.line_pointers.len() as u16;
+            let lp = LinePointer::new(new_upper as u16);
+            self.line_pointers.push(lp);
+            self.tuples.push(tuple_data.to_vec());
+            self.header.pd_lower = new_lower as u16;
+            idx
+        };
 
-        self.header.pd_lower = new_lower as u16;
         self.header.pd_upper = new_upper as u16;
+        Some(slot)
+    }
 
-        Some(slot_index)
+    pub fn compact(&mut self) {
+        for i in 0..self.line_pointers.len() {
+            let lp = &self.line_pointers[i];
+            if lp.lp_flags == LP_DEAD {
+                if i < self.tuples.len() {
+                    self.tuples[i] = Vec::new();
+                }
+            }
+        }
+
+        self.header.pd_lower = (PAGE_HEADER_SIZE + self.line_pointers.len() * LINE_POINTER_SIZE) as u16;
+
+        let mut total_len = 0;
+        for i in 0..self.line_pointers.len() {
+            if self.line_pointers[i].lp_flags == LP_NORMAL {
+                if i < self.tuples.len() {
+                    total_len += self.tuples[i].len();
+                }
+            }
+        }
+        self.header.pd_upper = (PAGE_SIZE - total_len) as u16;
     }
 
     pub fn free_space(&self) -> usize {
@@ -202,9 +265,11 @@ impl HeapPage {
         if (slot as usize) < self.line_pointers.len() {
             let lp = &self.line_pointers[slot as usize];
             if lp.lp_flags == LP_NORMAL {
-                let start = lp.lp_offset as usize;
-                let _end = start + self.tuples[slot as usize].len();
-                Some(&self.tuples[slot as usize])
+                if (slot as usize) < self.tuples.len() {
+                    Some(&self.tuples[slot as usize])
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -268,5 +333,35 @@ mod tests {
         let deserialized = HeapPage::deserialize(&serialized);
 
         assert_eq!(deserialized.tuple_count(), 2);
+    }
+
+    #[test]
+    fn test_heap_page_compaction_and_reuse() {
+        let mut page = HeapPage::new();
+        let s0 = page.add_tuple(&vec![1, 1, 1]).unwrap();
+        let s1 = page.add_tuple(&vec![2, 2, 2]).unwrap();
+        let s2 = page.add_tuple(&vec![3, 3, 3]).unwrap();
+        
+        assert_eq!(page.free_space(), PAGE_SIZE - PAGE_HEADER_SIZE - 3 * LINE_POINTER_SIZE - 9);
+
+        // Mark s1 as dead
+        page.line_pointers[s1 as usize].lp_flags = LP_DEAD;
+        
+        // Compact
+        page.compact();
+        
+        // Verify free space has reclaimed the 3 bytes of tuple 2 (but line pointer slot is still kept)
+        assert_eq!(page.free_space(), PAGE_SIZE - PAGE_HEADER_SIZE - 3 * LINE_POINTER_SIZE - 6);
+
+        // Serialize and deserialize, verify it maintains the dead slot
+        let bytes = page.serialize();
+        let mut deserialized = HeapPage::deserialize(&bytes);
+        assert_eq!(deserialized.line_pointers[s1 as usize].lp_flags, LP_DEAD);
+
+        // Now add another tuple, verifying it reuses the dead slot s1
+        let s3 = deserialized.add_tuple(&vec![4, 4, 4, 4]).unwrap();
+        assert_eq!(s3, s1);
+        assert_eq!(deserialized.line_pointers[s3 as usize].lp_flags, LP_NORMAL);
+        assert_eq!(deserialized.get_tuple(s3).unwrap(), &vec![4, 4, 4, 4]);
     }
 }

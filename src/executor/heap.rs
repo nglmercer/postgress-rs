@@ -576,3 +576,52 @@ fn build_updated_data(old_data: &[u8], column_idx: usize, new_value: &[u8]) -> O
         None
     }
 }
+
+pub async fn vacuum_relation(
+    cache: &SharedBufferCache,
+    rel_oid: Oid,
+    oldest_xmin: u32,
+) -> anyhow::Result<u64> {
+    let mut reclaimed_tuples = 0u64;
+    let state = cache
+        .get_relation_state(rel_oid)
+        .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+    let pages;
+    {
+        let rel_state = state.lock();
+        pages = rel_state.relation.pages.clone();
+    }
+
+    for &page_id in &pages {
+        let page_data = cache.storage.read_page(page_id)?;
+        let mut heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
+        let mut modified = false;
+
+        for slot_idx in 0..heap_page.line_pointers.len() {
+            if heap_page.line_pointers[slot_idx].lp_flags == crate::storage::heap_page::LP_NORMAL {
+                if slot_idx < heap_page.tuples.len() {
+                    let tuple_data = &heap_page.tuples[slot_idx];
+                    if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
+                        if tup.xmax != 0 && tup.xmax < oldest_xmin as u64 {
+                            heap_page.line_pointers[slot_idx].lp_flags = crate::storage::heap_page::LP_DEAD;
+                            modified = true;
+                            reclaimed_tuples += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if modified {
+            heap_page.compact();
+            cache.storage.write_page(page_id, &heap_page.serialize())?;
+            // Invalidate the cached (stale) buffer so subsequent scans re-read from storage
+            cache.invalidate_page(page_id);
+            {
+                let mut rel_state = state.lock();
+                rel_state.dirty_buffers.push(page_id);
+            }
+        }
+    }
+    Ok(reclaimed_tuples)
+}

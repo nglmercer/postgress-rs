@@ -16,6 +16,7 @@ pub struct BufferPool {
     pool_size: usize,
     buffers: Mutex<Vec<Buffer>>,
     page_map: Mutex<HashMap<PageId, usize>>,
+    next_victim: Mutex<usize>,
 }
 
 impl BufferPool {
@@ -34,6 +35,7 @@ impl BufferPool {
             pool_size,
             buffers: Mutex::new(buffers),
             page_map: Mutex::new(HashMap::new()),
+            next_victim: Mutex::new(0),
         }
     }
 
@@ -119,15 +121,32 @@ impl BufferPool {
     }
 
     fn find_victim(&self, buffers: &mut [Buffer]) -> usize {
-        let mut min_usage = u32::MAX;
-        let mut min_idx = 0;
+        let mut hand_lock = self.next_victim.lock();
+        let mut hand = *hand_lock;
+        let pool_size = self.pool_size;
+
+        for _ in 0..(pool_size * 2) {
+            let buf = &mut buffers[hand];
+            if buf.pin_count == 0 {
+                if buf.usage_count > 0 {
+                    buf.usage_count -= 1;
+                } else {
+                    let victim = hand;
+                    *hand_lock = (hand + 1) % pool_size;
+                    return victim;
+                }
+            }
+            hand = (hand + 1) % pool_size;
+        }
+
         for (i, buf) in buffers.iter().enumerate() {
-            if buf.pin_count == 0 && buf.usage_count < min_usage {
-                min_usage = buf.usage_count;
-                min_idx = i;
+            if buf.pin_count == 0 {
+                *hand_lock = (i + 1) % pool_size;
+                return i;
             }
         }
-        min_idx
+
+        0
     }
 
     pub fn inspect(&self) -> Vec<String> {
@@ -145,6 +164,18 @@ impl BufferPool {
     pub fn dirty_count(&self) -> usize {
         let buffers = self.buffers.lock();
         buffers.iter().filter(|b| b.is_dirty).count()
+    }
+
+    /// Invalidate (evict) a page from the pool so the next fetch re-reads from storage.
+    pub fn invalidate_page(&self, page_id: PageId) {
+        let mut map = self.page_map.lock();
+        if let Some(idx) = map.remove(&page_id) {
+            let mut buffers = self.buffers.lock();
+            // Reset the slot so it is treated as empty
+            buffers[idx].is_dirty = false;
+            buffers[idx].usage_count = 0;
+            buffers[idx].pin_count = 0;
+        }
     }
 }
 
@@ -216,6 +247,11 @@ impl SharedBufferCache {
             pin_count: buffer.pin_count,
         }));
         Ok(data)
+    }
+
+    /// Remove a page from the buffer pool so subsequent fetches re-read from storage.
+    pub fn invalidate_page(&self, page_id: crate::types::PageId) {
+        self.pool.invalidate_page(page_id);
     }
 }
 

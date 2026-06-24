@@ -5,6 +5,7 @@ pub mod window;
 pub mod set_ops;
 pub mod filter_limit;
 pub mod algorithms;
+pub mod materialize;
 
 use crate::sql::ast::*;
 use crate::buffer_cache::SharedBufferCache;
