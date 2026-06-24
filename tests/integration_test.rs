@@ -123,3 +123,56 @@ async fn test_heap_scan_empty() {
     let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
     assert_eq!(rows.len(), 0);
 }
+
+#[test]
+fn test_cte_parsing() {
+    use postgress_rs::sql::parser::Parser;
+    use postgress_rs::sql::ast::Statement;
+
+    // Simple CTE
+    let stmt = Parser::parse("WITH cte AS (SELECT 1) SELECT * FROM cte").unwrap();
+    match stmt {
+        Statement::Select(sel) => {
+            assert!(sel.with.is_some());
+            let with = sel.with.unwrap();
+            assert!(!with.recursive);
+            assert_eq!(with.ctes.len(), 1);
+            assert_eq!(with.ctes[0].name, "cte");
+        }
+        _ => panic!("expected Select"),
+    }
+
+    // Recursive CTE
+    let stmt = Parser::parse("WITH RECURSIVE tree AS (SELECT 1 UNION ALL SELECT 2) SELECT * FROM tree").unwrap();
+    match stmt {
+        Statement::Select(sel) => {
+            assert!(sel.with.is_some());
+            let with = sel.with.unwrap();
+            assert!(with.recursive);
+            assert_eq!(with.ctes.len(), 1);
+        }
+        _ => panic!("expected Select"),
+    }
+
+    // Multiple CTEs
+    let stmt = Parser::parse("WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b").unwrap();
+    match stmt {
+        Statement::Select(sel) => {
+            assert!(sel.with.is_some());
+            let with = sel.with.unwrap();
+            assert_eq!(with.ctes.len(), 2);
+        }
+        _ => panic!("expected Select"),
+    }
+
+    // CTE with NOT MATERIALIZED hint
+    let stmt = Parser::parse("WITH cte AS NOT MATERIALIZED (SELECT 1) SELECT * FROM cte").unwrap();
+    match stmt {
+        Statement::Select(sel) => {
+            assert!(sel.with.is_some());
+            let with = sel.with.unwrap();
+            assert_eq!(with.ctes[0].materialized, Some(false));
+        }
+        _ => panic!("expected Select"),
+    }
+}

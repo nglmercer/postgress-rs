@@ -608,15 +608,30 @@ async fn handle_select_statement(
         let _ = wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await;
     }
 
+    // Handle WITH (CTE) clause - register temporary relations for each CTE
+    let mut cte_oids = Vec::new();
+    if let Some(ref with) = select.with {
+        for cte in &with.ctes {
+            // For now, just register the CTE name as a temporary relation
+            // The actual materialization will happen when the CTE query is referenced
+            let cte_oid = catalog.allocate_oid();
+            let cte_rel = crate::types::Relation::empty(&cte.name, vec![]);
+            let mut rel_with_oid = cte_rel;
+            rel_with_oid.rel_oid = cte_oid;
+            let _ = catalog.create_relation(rel_with_oid).await;
+            cte_oids.push(cte_oid);
+            tracing::info!("registered CTE '{}' with oid {}", cte.name, cte_oid.0);
+        }
+    }
+
     // Get table name from FROM clause
     if let Some(ref from) = select.from {
         if let Some(join) = from.joins.first() {
             match &join.table {
                 crate::sql::ast::TableRef::Table(table_name) => {
                     let table_str = table_name.parts.join(".");
-                    let _table_oid = Oid(crate::protocol::parser::fnv_hash(&table_str));
                     
-                    // Try to find relation in catalog
+                    // Try to find relation in catalog (including CTEs)
                     let rels = catalog.list_relations();
                     if let Some(rel) = rels.iter().find(|r| r.name.to_uppercase() == table_str.to_uppercase()) {
                         let rel_oid = rel.rel_oid.0;
@@ -640,6 +655,11 @@ async fn handle_select_statement(
     } else {
         // SELECT without FROM - not supported yet
         send_error(socket, "SELECT without FROM not yet supported".to_string()).await;
+    }
+
+    // Clean up temporary CTE relations
+    for cte_oid in cte_oids {
+        let _ = catalog.delete_relation(cte_oid).await;
     }
 
     if was_implicit_txn {

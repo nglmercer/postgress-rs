@@ -92,6 +92,7 @@ impl Parser {
         match first {
             Token::Keyword(k) => match k.to_uppercase().as_str() {
                 "SELECT" => Ok(Statement::Select(self.parse_select()?)),
+                "WITH" => Ok(Statement::Select(self.parse_with_select()?)),
                 "INSERT" => Ok(Statement::Insert(self.parse_insert()?)),
                 "UPDATE" => Ok(Statement::Update(self.parse_update()?)),
                 "DELETE" => Ok(Statement::Delete(self.parse_delete()?)),
@@ -227,6 +228,49 @@ impl Parser {
             None
         };
 
+        let mut set_operations = Vec::new();
+        loop {
+            match self.peek() {
+                Token::Keyword(k) if k.to_uppercase() == "UNION" => {
+                    self.advance();
+                    let all = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ALL");
+                    if all {
+                        self.advance();
+                    }
+                    let right = self.parse_select_body()?;
+                    set_operations.push(SetOperation {
+                        operator: if all { SetOperator::UnionAll } else { SetOperator::Union },
+                        select: Box::new(right),
+                    });
+                }
+                Token::Keyword(k) if k.to_uppercase() == "INTERSECT" => {
+                    self.advance();
+                    let all = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ALL");
+                    if all {
+                        self.advance();
+                    }
+                    let right = self.parse_select_body()?;
+                    set_operations.push(SetOperation {
+                        operator: if all { SetOperator::IntersectAll } else { SetOperator::Intersect },
+                        select: Box::new(right),
+                    });
+                }
+                Token::Keyword(k) if k.to_uppercase() == "EXCEPT" => {
+                    self.advance();
+                    let all = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ALL");
+                    if all {
+                        self.advance();
+                    }
+                    let right = self.parse_select_body()?;
+                    set_operations.push(SetOperation {
+                        operator: if all { SetOperator::ExceptAll } else { SetOperator::Except },
+                        select: Box::new(right),
+                    });
+                }
+                _ => break,
+            }
+        }
+
         Ok(SelectStatement {
             with: None,
             distinct,
@@ -237,7 +281,95 @@ impl Parser {
             having,
             order_by,
             limit,
+            set_operations,
         })
+    }
+
+    fn parse_select_body(&mut self) -> anyhow::Result<SelectStatement> {
+        if matches!(self.peek(), Token::LParen) {
+            self.advance();
+            let stmt = self.parse_select()?;
+            self.expect(&Token::RParen)?;
+            Ok(stmt)
+        } else {
+            self.parse_select()
+        }
+    }
+
+    fn parse_with_select(&mut self) -> anyhow::Result<SelectStatement> {
+        self.expect_keyword("WITH")?;
+        let recursive = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RECURSIVE") {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        
+        let mut ctes = Vec::new();
+        loop {
+            ctes.push(self.parse_cte()?);
+            if !matches!(self.peek(), Token::Comma) {
+                break;
+            }
+            self.advance();
+        }
+        
+        let mut select = self.parse_select()?;
+        select.with = Some(WithClause { recursive, ctes });
+        Ok(select)
+    }
+
+    fn parse_cte(&mut self) -> anyhow::Result<CommonTableExpr> {
+        let name = self.expect_ident()?;
+        
+        let columns = if matches!(self.peek(), Token::LParen) {
+            self.advance();
+            let mut cols = Vec::new();
+            loop {
+                cols.push(self.expect_ident()?);
+                if !matches!(self.peek(), Token::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+            self.expect(&Token::RParen)?;
+            Some(cols)
+        } else {
+            None
+        };
+        
+        self.expect_keyword("AS")?;
+        
+        // Optional MATERIALIZED / NOT MATERIALIZED hint (after AS)
+        let materialized = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "MATERIALIZED") {
+            self.advance();
+            Some(true)
+        } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT") {
+            // Check if next token is MATERIALIZED
+            let saved_pos = self.pos;
+            self.advance();
+            if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "MATERIALIZED") {
+                self.advance();
+                Some(false)
+            } else {
+                // Not followed by MATERIALIZED, restore position
+                self.pos = saved_pos;
+                None
+            }
+        } else {
+            None
+        };
+        
+        let query = if matches!(self.peek(), Token::LParen) {
+            self.advance();
+            let stmt = self.parse_statement()?;
+            self.expect(&Token::RParen)?;
+            stmt
+        } else {
+            self.parse_statement()?
+        };
+        
+        Ok(CommonTableExpr { name, columns, materialized, query })
     }
 
     fn parse_select_list(&mut self) -> anyhow::Result<Vec<SelectItem>> {
@@ -281,9 +413,23 @@ impl Parser {
         let mut joins = Vec::new();
 
         let table = self.parse_table_ref()?;
+        
+        // Parse alias for base table
+        let alias = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AS") {
+            self.advance();
+            Some(self.expect_ident()?)
+        } else if matches!(self.peek(), Token::Ident(_)) {
+            match self.peek().clone() {
+                Token::Ident(s) => { self.advance(); Some(s) }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        
         joins.push(Join {
             table,
-            alias: None,
+            alias,
             join_type: JoinType::Inner,
             constraint: JoinConstraint::None,
         });
@@ -295,7 +441,10 @@ impl Parser {
             let join_type = self.parse_join_type()?;
             let table = self.parse_table_ref()?;
 
-            let alias = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AS" || k.to_uppercase() == "ON" || k.to_uppercase() == "USING" || k.to_uppercase() == "JOIN" || k.to_uppercase() == "WHERE") {
+            let alias = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AS") {
+                self.advance();
+                Some(self.expect_ident()?)
+            } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ON" || k.to_uppercase() == "USING" || k.to_uppercase() == "JOIN" || k.to_uppercase() == "WHERE" || k.to_uppercase() == "GROUP" || k.to_uppercase() == "ORDER" || k.to_uppercase() == "LIMIT" || k.to_uppercase() == "HAVING") {
                 None
             } else if matches!(self.peek(), Token::Ident(_)) {
                 match self.peek().clone() {
@@ -400,7 +549,7 @@ impl Parser {
                 join_type = JoinType::Lateral;
             }
             _ => {
-                self.expect_keyword("JOIN")?;
+                // Default to INNER JOIN - JOIN keyword consumed below
             }
         }
 
@@ -469,6 +618,76 @@ impl Parser {
             _ => anyhow::bail!("expected VALUES or SELECT after INSERT INTO"),
         };
 
+        let on_conflict = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ON") {
+            self.advance();
+            self.expect_keyword("CONFLICT")?;
+            
+            // Optional conflict target: (col1, col2, ...) before DO
+            let conflict_target = if matches!(self.peek(), Token::LParen) {
+                self.advance();
+                let mut cols = Vec::new();
+                loop {
+                    cols.push(self.expect_ident()?);
+                    if !matches!(self.peek(), Token::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                self.expect(&Token::RParen)?;
+                if cols.is_empty() {
+                    None
+                } else {
+                    Some(cols)
+                }
+            } else {
+                None
+            };
+            
+            self.expect_keyword("DO")?;
+            
+            match self.peek() {
+                Token::Keyword(k) if k.to_uppercase() == "NOTHING" => {
+                    self.advance();
+                    Some(OnConflict::DoNothing)
+                }
+                Token::Keyword(k) if k.to_uppercase() == "UPDATE" => {
+                    self.advance();
+                    self.expect_keyword("SET")?;
+                    
+                    let mut set_clauses = Vec::new();
+                    loop {
+                        let column = self.expect_ident()?;
+                        self.expect(&Token::Eq)?;
+                        let value = self.parse_expr()?;
+                        set_clauses.push(SetClause {
+                            column,
+                            value: Box::new(value),
+                        });
+                        if !matches!(self.peek(), Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                    
+                    let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE") {
+                        self.advance();
+                        Some(Box::new(self.parse_expr()?))
+                    } else {
+                        None
+                    };
+                    
+                    Some(OnConflict::DoUpdate {
+                        target_columns: conflict_target,
+                        where_clause,
+                        set_clauses,
+                    })
+                }
+                _ => anyhow::bail!("expected NOTHING or UPDATE after DO"),
+            }
+        } else {
+            None
+        };
+
         let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING") {
             self.advance();
             self.parse_select_list()?
@@ -480,6 +699,7 @@ impl Parser {
             table,
             columns,
             source,
+            on_conflict,
             returning,
         })
     }
@@ -1973,6 +2193,7 @@ fn tokenize(sql: &str) -> Vec<Token> {
                     "ORDER" | "BY" | "ASC" | "DESC" | "NULLS" | "FIRST" | "LAST" |
                     "GROUP" | "HAVING" | "LIMIT" | "OFFSET" |
                     "DISTINCT" | "RETURNING" | "VALUES" | "SET" |
+                    "UNION" | "INTERSECT" | "EXCEPT" | "CONFLICT" | "NOTHING" | "DO" | "EXCLUDED" |
                     "BEGIN" | "START" | "TRANSACTION" | "COMMIT" | "ROLLBACK" | "ABORT" |
                     "ISOLATION" | "LEVEL" | "READ" | "WRITE" | "SERIALIZABLE" |
                     "REPEATABLE" | "COMMITTED" | "UNCOMMITTED" |
@@ -2156,6 +2377,156 @@ mod tests {
         match stmt {
             Statement::Select(sel) => {
                 assert_eq!(sel.select_list.len(), 1);
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_select_union() {
+        let stmt = Parser::parse("SELECT id FROM users UNION SELECT id FROM admins").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.set_operations.len(), 1);
+                assert!(matches!(sel.set_operations[0].operator, SetOperator::Union));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_select_union_all() {
+        let stmt = Parser::parse("SELECT id FROM users UNION ALL SELECT id FROM admins").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.set_operations.len(), 1);
+                assert!(matches!(sel.set_operations[0].operator, SetOperator::UnionAll));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_select_intersect() {
+        let stmt = Parser::parse("SELECT id FROM users INTERSECT SELECT id FROM admins").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.set_operations.len(), 1);
+                assert!(matches!(sel.set_operations[0].operator, SetOperator::Intersect));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_select_except() {
+        let stmt = Parser::parse("SELECT id FROM users EXCEPT SELECT id FROM admins").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert_eq!(sel.set_operations.len(), 1);
+                assert!(matches!(sel.set_operations[0].operator, SetOperator::Except));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_insert_on_conflict_do_nothing() {
+        let stmt = Parser::parse("INSERT INTO users (id, name) VALUES (1, 'Alice') ON CONFLICT DO NOTHING").unwrap();
+        match stmt {
+            Statement::Insert(ins) => {
+                assert!(ins.on_conflict.is_some());
+                assert!(matches!(ins.on_conflict, Some(OnConflict::DoNothing)));
+            }
+            _ => panic!("expected Insert"),
+        }
+    }
+
+    #[test]
+    fn test_insert_on_conflict_do_update() {
+        let stmt = Parser::parse("INSERT INTO users (id, name) VALUES (1, 'Alice') ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name").unwrap();
+        match stmt {
+            Statement::Insert(ins) => {
+                assert!(ins.on_conflict.is_some());
+                match ins.on_conflict {
+                    Some(OnConflict::DoUpdate { target_columns, set_clauses, .. }) => {
+                        assert!(target_columns.is_some());
+                        assert_eq!(set_clauses.len(), 1);
+                    }
+                    _ => panic!("expected DoUpdate"),
+                }
+            }
+            _ => panic!("expected Insert"),
+        }
+    }
+
+    #[test]
+    fn test_with_cte() {
+        let stmt = Parser::parse("WITH active AS (SELECT id FROM users WHERE active = true) SELECT * FROM active").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.with.is_some());
+                let with = sel.with.unwrap();
+                assert!(!with.recursive);
+                assert_eq!(with.ctes.len(), 1);
+                assert_eq!(with.ctes[0].name, "active");
+                assert!(with.ctes[0].columns.is_none());
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_with_recursive_cte() {
+        let stmt = Parser::parse("WITH RECURSIVE tree AS (SELECT id FROM nodes UNION ALL SELECT n.id FROM nodes n JOIN tree t ON n.parent = t.id) SELECT * FROM tree").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.with.is_some());
+                let with = sel.with.unwrap();
+                assert!(with.recursive);
+                assert_eq!(with.ctes.len(), 1);
+                assert_eq!(with.ctes[0].name, "tree");
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_with_multiple_ctes() {
+        let stmt = Parser::parse("WITH a AS (SELECT 1), b AS (SELECT 2) SELECT * FROM a, b").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.with.is_some());
+                let with = sel.with.unwrap();
+                assert_eq!(with.ctes.len(), 2);
+                assert_eq!(with.ctes[0].name, "a");
+                assert_eq!(with.ctes[1].name, "b");
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_with_cte_with_columns() {
+        let stmt = Parser::parse("WITH cte (x, y) AS (SELECT 1, 2) SELECT * FROM cte").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.with.is_some());
+                let with = sel.with.unwrap();
+                assert_eq!(with.ctes[0].columns, Some(vec!["x".to_string(), "y".to_string()]));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_with_cte_not_materialized() {
+        let stmt = Parser::parse("WITH cte AS NOT MATERIALIZED (SELECT 1) SELECT * FROM cte").unwrap();
+        match stmt {
+            Statement::Select(sel) => {
+                assert!(sel.with.is_some());
+                let with = sel.with.unwrap();
+                assert_eq!(with.ctes[0].materialized, Some(false));
             }
             _ => panic!("expected Select"),
         }

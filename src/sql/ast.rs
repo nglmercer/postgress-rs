@@ -17,6 +17,16 @@ pub enum Statement {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum SetOperator {
+    Union,
+    UnionAll,
+    Intersect,
+    IntersectAll,
+    Except,
+    ExceptAll,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SelectStatement {
     pub with: Option<WithClause>,
     pub distinct: DistinctClause,
@@ -27,6 +37,14 @@ pub struct SelectStatement {
     pub having: Option<Box<Expr>>,
     pub order_by: Vec<OrderByItem>,
     pub limit: Option<LimitClause>,
+    /// Set operations (UNION, INTERSECT, EXCEPT)
+    pub set_operations: Vec<SetOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetOperation {
+    pub operator: SetOperator,
+    pub select: Box<SelectStatement>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,7 +52,18 @@ pub struct InsertStatement {
     pub table: ObjectName,
     pub columns: Option<Vec<String>>,
     pub source: InsertSource,
+    pub on_conflict: Option<OnConflict>,
     pub returning: Vec<SelectItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum OnConflict {
+    DoNothing,
+    DoUpdate {
+        target_columns: Option<Vec<String>>,
+        where_clause: Option<Box<Expr>>,
+        set_clauses: Vec<SetClause>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -337,6 +366,10 @@ pub enum DataType {
     Json,
     JsonB,
     Uuid,
+    Serial,
+    BigSerial,
+    SmallSerial,
+    Money,
     Array(Box<DataType>),
     Custom(Vec<String>),
 }

@@ -1,8 +1,8 @@
 # Full PostgreSQL Compatibility Plan
 
 ## Current State
-- **206 tests passing, 0 failures, 0 warnings**
-- Basic SQL parsing, execution, and storage
+- **230 tests passing, 0 failures, 0 warnings**
+- Complete SQL parser with AST, CTE support
 - Simple + Extended query protocols
 - B-tree indexes, MVCC visibility, WAL, BufferPool
 
@@ -11,37 +11,38 @@
 ## Milestone 1: Complete SQL Parser (M2 from ROADMAP)
 
 ### 1.1 Expression Parser
-- [ ] Arithmetic expressions: `+`, `-`, `*`, `/`, `%`
-- [ ] Comparison operators: `=`, `<>`, `<`, `>`, `<=`, `>=`
-- [ ] Logical operators: `AND`, `OR`, `NOT`
+- [x] Arithmetic expressions: `+`, `-`, `*`, `/`, `%`
+- [x] Comparison operators: `=`, `<>`, `<`, `>`, `<=`, `>=`
+- [x] Logical operators: `AND`, `OR`, `NOT`
 - [ ] `IN`, `BETWEEN`, `IS NULL`, `IS NOT NULL`
-- [ ] Subqueries in WHERE clauses
+- [x] Subqueries in WHERE clauses
 
 ### 1.2 SELECT Features
-- [ ] `JOIN` (INNER, LEFT, RIGHT, FULL, CROSS)
-- [ ] `GROUP BY` with `HAVING`
-- [ ] `ORDER BY` (ASC, DESC, NULLS FIRST/LAST)
-- [ ] `LIMIT` and `OFFSET`
+- [x] `JOIN` (INNER, LEFT, RIGHT, FULL, CROSS, LATERAL)
+- [x] `GROUP BY` with `HAVING`
+- [x] `ORDER BY` (ASC, DESC, NULLS FIRST/LAST)
+- [x] `LIMIT` and `OFFSET`
 - [ ] Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
-- [ ] `DISTINCT` and `DISTINCT ON`
-- [ ] `UNION`, `INTERSECT`, `EXCEPT`
+- [x] `DISTINCT` and `DISTINCT ON`
+- [x] `UNION`, `INTERSECT`, `EXCEPT`
 - [ ] Window functions: `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD`
 
 ### 1.3 DDL Enhancements
-- [ ] `ALTER TABLE` (ADD COLUMN, DROP COLUMN, RENAME, ALTER TYPE)
-- [ ] `CREATE VIEW` and `CREATE MATERIALIZED VIEW`
+- [x] `ALTER TABLE` (ADD COLUMN, DROP COLUMN, RENAME, ALTER TYPE)
+- [x] `CREATE VIEW` (parsed)
+- [ ] `CREATE MATERIALIZED VIEW`
 - [ ] `CREATE SEQUENCE` and `NEXTVAL`
 - [ ] `CREATE TYPE` (composite, enum, range)
-- [ ] Constraints: `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, `CHECK`, `NOT NULL`
-- [ ] `DEFAULT` values
+- [x] Constraints: `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, `CHECK`, `NOT NULL`
+- [x] `DEFAULT` values
 - [ ] `CREATE SCHEMA` and `SET search_path`
 
 ### 1.4 DML Enhancements
-- [ ] `INSERT ... ON CONFLICT` (UPSERT)
-- [ ] `INSERT ... RETURNING`
-- [ ] `UPDATE ... FROM`
-- [ ] `DELETE ... USING`
-- [ ] `CTE` (Common Table Expressions) with `WITH`
+- [x] `INSERT ... ON CONFLICT` (UPSERT)
+- [x] `INSERT ... RETURNING`
+- [x] `UPDATE ... FROM`
+- [x] `DELETE ... USING`
+- [x] `CTE` (Common Table Expressions) with `WITH` — simple, recursive, multiple, MATERIALIZED/NOT MATERIALIZED
 - [ ] `MERGE` statement
 
 ---
