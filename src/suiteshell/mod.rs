@@ -28,6 +28,7 @@ impl SuiteShell {
         let cache = Arc::new(SharedBufferCache::new(storage.clone()));
         let catalog = Arc::new(Catalog::new(storage.clone()));
         let txn_mgr = Arc::new(TransactionManager::new());
+        let lock_mgr = Arc::new(crate::transaction::locks::LockManager::new());
 
         catalog.register_cache(cache.clone());
         catalog.bootstrap().await?;
@@ -42,8 +43,9 @@ impl SuiteShell {
             let catalog = catalog.clone();
             let wal = wal.clone();
             let txn_mgr = txn_mgr.clone();
+            let lock_mgr = lock_mgr.clone();
             tokio::spawn(async move {
-                if let Err(e) = server::handle_connection(socket, cache, catalog, wal, txn_mgr).await {
+                if let Err(e) = server::handle_connection(socket, cache, catalog, wal, txn_mgr, lock_mgr).await {
                     tracing::error!("connection error: {}", e);
                 }
             });

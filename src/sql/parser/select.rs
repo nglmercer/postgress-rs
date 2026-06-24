@@ -121,6 +121,37 @@ impl Parser {
             None
         };
 
+        let mut locking = Vec::new();
+        loop {
+            match self.peek() {
+                Token::Keyword(k) if k.to_uppercase() == "FOR" => {
+                    self.advance();
+                    match self.peek() {
+                        Token::Keyword(k) if k.to_uppercase() == "UPDATE" => {
+                            self.advance();
+                            locking.push(LockingClause::ForUpdate);
+                        }
+                        Token::Keyword(k) if k.to_uppercase() == "NO" => {
+                            self.advance();
+                            self.expect_keyword("KEY")?;
+                            self.expect_keyword("UPDATE")?;
+                            locking.push(LockingClause::ForNoKeyUpdate);
+                        }
+                        Token::Keyword(k) if k.to_uppercase() == "SHARE" => {
+                            self.advance();
+                            locking.push(LockingClause::ForShare);
+                        }
+                        _ => {
+                            self.expect_keyword("KEY")?;
+                            self.expect_keyword("SHARE")?;
+                            locking.push(LockingClause::ForKeyShare);
+                        }
+                    }
+                }
+                _ => break,
+            }
+        }
+
         let mut set_operations = Vec::new();
         loop {
             match self.peek() {
@@ -175,6 +206,7 @@ impl Parser {
             order_by,
             limit,
             offset,
+            locking,
             set_operations,
         })
     }

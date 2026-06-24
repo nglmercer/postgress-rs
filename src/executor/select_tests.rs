@@ -31,6 +31,7 @@ mod tests {
             order_by: vec![],
             limit: None,
             offset: None,
+            locking: vec![],
             set_operations: vec![],
         };
         let result = execute_select(&select, &cache, &catalog).await.unwrap();
@@ -52,6 +53,7 @@ mod tests {
             order_by: vec![],
             limit: Some(LimitClause::Expr(Expr::Literal(Literal::Number("5".to_string())))),
             offset: None,
+            locking: vec![],
             set_operations: vec![],
         };
         let result = execute_select(&select, &cache, &catalog).await.unwrap();
@@ -72,6 +74,7 @@ mod tests {
             order_by: vec![],
             limit: Some(LimitClause::All),
             offset: None,
+            locking: vec![],
             set_operations: vec![],
         };
         let result = execute_select(&select, &cache, &catalog).await.unwrap();
@@ -265,6 +268,7 @@ mod tests {
             order_by: vec![],
             limit: None,
             offset: None,
+            locking: vec![],
             set_operations: vec![],
         };
         let result = execute_select(&select, &cache, &catalog).await.unwrap();
@@ -285,6 +289,7 @@ mod tests {
             order_by: vec![],
             limit: None,
             offset: Some(Expr::Literal(Literal::Number("5".to_string()))),
+            locking: vec![],
             set_operations: vec![],
         };
         let result = execute_select(&select, &cache, &catalog).await.unwrap();

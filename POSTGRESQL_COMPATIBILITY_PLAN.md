@@ -1,7 +1,7 @@
 # Full PostgreSQL Compatibility Plan
 
 ## Current State
-- **391 tests passing, 0 failures, 0 warnings**
+- **401 tests passing, 0 failures, 0 warnings**
 - Complete SQL parser with AST, CTE support, type casting, additional data types
 - Date/Time types and functions: NOW(), CURRENT_DATE/TIME/TIMESTAMP, EXTRACT, DATE_TRUNC, DATE_PART, AT TIME ZONE
 - Type casting for: BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMPTZ, INTERVAL, BIT, BIT VARYING, INET, CIDR, MACADDR, TSVECTOR, TSQUERY
@@ -133,10 +133,10 @@
 - [ ] Subtransactions and savepoints
 
 ### 4.2 Locking
-- [ ] Table-level locks (ACCESS SHARE, ROW SHARE, ROW EXCLUSIVE, etc.)
-- [ ] Row-level locks (FOR UPDATE, FOR SHARE, FOR KEY SHARE)
+- [x] Table-level locks (ACCESS SHARE, ROW SHARE, ROW EXCLUSIVE, etc.)
+- [x] Row-level locks (FOR UPDATE, FOR SHARE, FOR KEY SHARE)
+- [x] Lock queue and deadlock detection
 - [ ] Advisory locks
-- [ ] Lock queue and deadlock detection
 - [ ] Lock timeout and statement timeout
 
 ### 4.3 Snapshot Management

@@ -44,8 +44,24 @@ pub struct SelectStatement {
     pub order_by: Vec<OrderByItem>,
     pub limit: Option<LimitClause>,
     pub offset: Option<Expr>,
+    /// Locking clauses (FOR UPDATE, FOR SHARE, etc.)
+    pub locking: Vec<LockingClause>,
     /// Set operations (UNION, INTERSECT, EXCEPT)
     pub set_operations: Vec<SetOperation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LockingClause {
+    ForUpdate,
+    ForNoKeyUpdate,
+    ForShare,
+    ForKeyShare,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LockingJoin {
+    pub tables: Vec<ObjectName>,
+    pub clause: LockingClause,
 }
 
 #[derive(Debug, Clone, PartialEq)]
