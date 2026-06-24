@@ -1,6 +1,8 @@
 use crate::protocol::parser::Parser;
 use crate::protocol::codes::Query;
 use crate::protocol::backend::{BackendMessage, TransactionStatus, ErrorField};
+use crate::protocol::FrontendMessage;
+use crate::protocol::ExtendedQueryState;
 use crate::executor::Planner;
 use crate::executor::heap::{heap_scan, slow_scan, SlowScan, Filter, tuple_insert, TupleInsert};
 use crate::buffer_cache::SharedBufferCache;
@@ -56,6 +58,7 @@ pub async fn handle_connection(
     let mut parser = Parser::new();
     let mut buf = vec![0u8; 8192];
     let mut current_xid: Option<TransactionId> = None;
+    let mut ext_state = ExtendedQueryState::new();
 
     let startup_messages: Vec<BackendMessage> = vec![
         BackendMessage::BackendKeyData { pid: std::process::id(), secret: 12345 },
@@ -81,205 +84,297 @@ pub async fn handle_connection(
             Err(e) => return Err(e.into()),
         };
 
-        if let Some(query) = parser.feed(&buf[..n]) {
-            tracing::info!("executing: {:?}", query);
-            match &query {
-                Query::CreateTable { name, columns } => {
-                    if let Err(e) = execute_create_table(&catalog, &cache, name, columns, &mut socket).await {
-                        send_error(&mut socket, e.to_string()).await;
-                    } else {
-                        let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
-                        let messages = vec![
-                            BackendMessage::CommandComplete { tag: format!("CREATE TABLE {}", name) },
-                            BackendMessage::ReadyForQuery { status: tx_status },
-                        ];
-                        let _ = socket.write_all(&encode_messages(&messages)).await;
-                    }
-                }
-                Query::DropTable { name } => {
-                    if let Err(e) = execute_drop_table(&catalog, name, &mut socket).await {
-                        send_error(&mut socket, e.to_string()).await;
-                    } else {
-                        let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
-                        let messages = vec![
-                            BackendMessage::CommandComplete { tag: format!("DROP TABLE {}", name) },
-                            BackendMessage::ReadyForQuery { status: tx_status },
-                        ];
-                        let _ = socket.write_all(&encode_messages(&messages)).await;
-                    }
-                }
-                Query::CreateIndex { name, table, column } => {
-                    if let Err(e) = execute_create_index(&catalog, name, table, column, &mut socket).await {
-                        send_error(&mut socket, e.to_string()).await;
-                    } else {
-                        let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
-                        let messages = vec![
-                            BackendMessage::CommandComplete { tag: format!("CREATE INDEX {}", name) },
-                            BackendMessage::ReadyForQuery { status: tx_status },
-                        ];
-                        let _ = socket.write_all(&encode_messages(&messages)).await;
-                    }
-                }
-                Query::Begin { mode: _ } => {
-                    let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
-                    current_xid = Some(xid);
-                    let messages = vec![
-                        BackendMessage::CommandComplete { tag: "BEGIN".to_string() },
-                        BackendMessage::ReadyForQuery { status: TransactionStatus::InTransaction },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&messages)).await;
-                }
-                Query::Commit => {
-                    if let Some(xid) = current_xid {
-                        let _ = txn_mgr.commit(xid);
-                        {
-                            let wal_guard = wal.lock().await;
-                            wal_guard.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await?;
+        if let Ok(messages) = FrontendMessage::decode(&buf[..n]) {
+            for msg in messages {
+                match msg {
+                    FrontendMessage::Query { sql } => {
+                        if let Some(query) = parser.feed(sql.as_bytes()) {
+                            handle_query(&query, &catalog, &cache, &wal, &txn_mgr, &mut ext_state, &mut current_xid, &mut socket).await;
                         }
-                        wal.lock().await.flush().await?;
                     }
-                    current_xid = None;
-                    let messages = vec![
-                        BackendMessage::CommandComplete { tag: "COMMIT".to_string() },
-                        BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&messages)).await;
-                }
-                Query::Rollback => {
-                    if let Some(xid) = current_xid {
-                        let _ = txn_mgr.rollback(xid);
-                        {
-                            let wal_guard = wal.lock().await;
-                            wal_guard.append(&crate::wal::WALRecord::Abort { xid: xid.0 as u64 }).await?;
-                        }
-                        wal.lock().await.flush().await?;
-                    }
-                    current_xid = None;
-                    let messages = vec![
-                        BackendMessage::CommandComplete { tag: "ROLLBACK".to_string() },
-                        BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&messages)).await;
-                }
-                Query::Insert { table, values } => {
-                    let was_implicit_txn = current_xid.is_none();
-                    if was_implicit_txn {
-                        let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
-                        current_xid = Some(xid);
-                        wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await?;
-                    }
-                    tuple_insert(&cache, &*wal.lock().await, &TupleInsert { rel_oid: *table, values: values.clone() }).await?;
-                    let messages = vec![
-                        BackendMessage::CommandComplete { tag: "INSERT 1".to_string() },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&messages)).await;
-                    if was_implicit_txn {
-                        if let Some(xid) = current_xid {
-                            wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await?;
-                            let _ = txn_mgr.commit(xid);
-                            wal.lock().await.flush().await?;
-                        }
-                        current_xid = None;
-                    }
-                    let ready_messages = vec![
-                        BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&ready_messages)).await;
-                }
-                Query::Update { table, column: _, value, where_clause } => {
-                    let was_implicit_txn = current_xid.is_none();
-                    if was_implicit_txn {
-                        let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
-                        current_xid = Some(xid);
-                        wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await?;
-                    }
-                    let filter = where_clause.as_ref().map(|s| parse_filter(s)).transpose()?;
-                    let updated = crate::executor::heap::tuple_update(&cache, &*wal.lock().await, *table, 0, value, filter).await?;
-                    let messages = vec![
-                        BackendMessage::CommandComplete { tag: format!("UPDATE {}", updated) },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&messages)).await;
-                    if was_implicit_txn {
-                        if let Some(xid) = current_xid {
-                            wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await?;
-                            let _ = txn_mgr.commit(xid);
-                            wal.lock().await.flush().await?;
-                        }
-                        current_xid = None;
-                    }
-                    let ready_messages = vec![
-                        BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&ready_messages)).await;
-                }
-                Query::Delete { table, where_clause } => {
-                    let was_implicit_txn = current_xid.is_none();
-                    if was_implicit_txn {
-                        let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
-                        current_xid = Some(xid);
-                        wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await?;
-                    }
-                    let filter = where_clause.as_ref().map(|s| parse_filter(s)).transpose()?;
-                    let deleted = crate::executor::heap::tuple_delete(&cache, &*wal.lock().await, *table, filter).await?;
-                    let messages = vec![
-                        BackendMessage::CommandComplete { tag: format!("DELETE {}", deleted) },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&messages)).await;
-                    if was_implicit_txn {
-                        if let Some(xid) = current_xid {
-                            wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await?;
-                            let _ = txn_mgr.commit(xid);
-                            wal.lock().await.flush().await?;
-                        }
-                        current_xid = None;
-                    }
-                    let ready_messages = vec![
-                        BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
-                    ];
-                    let _ = socket.write_all(&encode_messages(&ready_messages)).await;
-                }
-                Query::Select { table: _, where_clause, columns: _ } => {
-                    let was_implicit_txn = current_xid.is_none();
-                    if was_implicit_txn {
-                        let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
-                        current_xid = Some(xid);
-                        wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await?;
-                    }
-                    let _filter = where_clause.as_ref().map(|s| parse_filter(s)).transpose()?;
-                    let plan = Planner::plan(&query, &[]);
-                    match plan {
-                        crate::executor::Plan::SeqScan(scan) => {
-                            if scan.filter.is_none() {
-                                if let Err(e) = execute_seq_scan(&cache, scan.rel_oid, &mut socket).await {
-                                    send_error(&mut socket, e.to_string()).await;
-                                }
-                            } else {
-                                if let Err(e) = execute_slow_scan(&cache, scan.rel_oid, scan.filter.clone().unwrap(), &mut socket).await {
-                                    send_error(&mut socket, e.to_string()).await;
-                                }
+                    FrontendMessage::Parse { name, sql, parameter_types } => {
+                        match ext_state.prepare(&name, &sql, parameter_types) {
+                            Ok(()) => {
+                                let _ = socket.write_all(&encode(BackendMessage::ParseComplete)).await;
+                            }
+                            Err(e) => {
+                                send_error(&mut socket, e.to_string()).await;
                             }
                         }
-                        crate::executor::Plan::IndexScan(_) => {
-                            let messages: Vec<BackendMessage> = vec![
-                                BackendMessage::CommandComplete { tag: "SELECT 0".to_string() },
+                    }
+                    FrontendMessage::Bind { portal, statement, parameter_formats: _, parameter_values, result_formats } => {
+                        match ext_state.bind(&portal, &statement, parameter_values, result_formats) {
+                            Ok(()) => {
+                                let _ = socket.write_all(&encode(BackendMessage::BindComplete)).await;
+                            }
+                            Err(e) => {
+                                send_error(&mut socket, e.to_string()).await;
+                            }
+                        }
+                    }
+                    FrontendMessage::Execute { portal, max_rows: _ } => {
+                        if let Some(portal) = ext_state.get_portal(&portal) {
+                            let query = portal.query.clone();
+                            handle_query(&query, &catalog, &cache, &wal, &txn_mgr, &mut ext_state, &mut current_xid, &mut socket).await;
+                        }
+                    }
+                    FrontendMessage::Sync => {
+                        let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
+                        let _ = socket.write_all(&encode(BackendMessage::ReadyForQuery { status: tx_status })).await;
+                    }
+                    FrontendMessage::Describe { kind, name: _ } => {
+                        if kind == b'S' {
+                            let _ = socket.write_all(&encode(BackendMessage::NoData)).await;
+                        } else {
+                            let _ = socket.write_all(&encode(BackendMessage::NoData)).await;
+                        }
+                    }
+                    FrontendMessage::Close { kind, name } => {
+                        if kind == b'S' {
+                            ext_state.close_statement(&name);
+                        } else {
+                            ext_state.close_portal(&name);
+                        }
+                        let _ = socket.write_all(&encode(BackendMessage::CloseComplete)).await;
+                    }
+                    FrontendMessage::Flush => {}
+                    FrontendMessage::Terminate => {
+                        ext_state.close_all();
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+async fn handle_query(
+    query: &Query,
+    catalog: &Catalog,
+    cache: &SharedBufferCache,
+    wal: &Arc<tokio::sync::Mutex<WAL>>,
+    txn_mgr: &Arc<TransactionManager>,
+    _ext_state: &mut ExtendedQueryState,
+    current_xid: &mut Option<TransactionId>,
+    socket: &mut tokio::net::TcpStream,
+) {
+    tracing::info!("executing: {:?}", query);
+    match query {
+        Query::CreateTable { name, columns } => {
+            if let Err(e) = execute_create_table(catalog, cache, name, columns, socket).await {
+                send_error(socket, e.to_string()).await;
+            } else {
+                let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: format!("CREATE TABLE {}", name) },
+                    BackendMessage::ReadyForQuery { status: tx_status },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            }
+        }
+        Query::DropTable { name } => {
+            if let Err(e) = execute_drop_table(catalog, name, socket).await {
+                send_error(socket, e.to_string()).await;
+            } else {
+                let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: format!("DROP TABLE {}", name) },
+                    BackendMessage::ReadyForQuery { status: tx_status },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            }
+        }
+        Query::CreateIndex { name, table, column } => {
+            if let Err(e) = execute_create_index(catalog, name, table, column, socket).await {
+                send_error(socket, e.to_string()).await;
+            } else {
+                let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: format!("CREATE INDEX {}", name) },
+                    BackendMessage::ReadyForQuery { status: tx_status },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            }
+        }
+        Query::Begin { mode: _ } => {
+            let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
+            *current_xid = Some(xid);
+            let messages = vec![
+                BackendMessage::CommandComplete { tag: "BEGIN".to_string() },
+                BackendMessage::ReadyForQuery { status: TransactionStatus::InTransaction },
+            ];
+            let _ = socket.write_all(&encode_messages(&messages)).await;
+        }
+        Query::Commit => {
+            if let Some(xid) = current_xid {
+                let _ = txn_mgr.commit(*xid);
+                {
+                    let wal_guard = wal.lock().await;
+                    let _ = wal_guard.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await;
+                }
+                let _ = wal.lock().await.flush().await;
+            }
+            *current_xid = None;
+            let messages = vec![
+                BackendMessage::CommandComplete { tag: "COMMIT".to_string() },
+                BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
+            ];
+            let _ = socket.write_all(&encode_messages(&messages)).await;
+        }
+        Query::Rollback => {
+            if let Some(xid) = current_xid {
+                let _ = txn_mgr.rollback(*xid);
+                {
+                    let wal_guard = wal.lock().await;
+                    let _ = wal_guard.append(&crate::wal::WALRecord::Abort { xid: xid.0 as u64 }).await;
+                }
+                let _ = wal.lock().await.flush().await;
+            }
+            *current_xid = None;
+            let messages = vec![
+                BackendMessage::CommandComplete { tag: "ROLLBACK".to_string() },
+                BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
+            ];
+            let _ = socket.write_all(&encode_messages(&messages)).await;
+        }
+        Query::Insert { table, values } => {
+            let was_implicit_txn = current_xid.is_none();
+            if was_implicit_txn {
+                let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
+                *current_xid = Some(xid);
+                let _ = wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await;
+            }
+            if let Err(e) = tuple_insert(cache, &*wal.lock().await, &TupleInsert { rel_oid: *table, values: values.clone() }).await {
+                send_error(socket, e.to_string()).await;
+            } else {
+                let messages = vec![
+                    BackendMessage::CommandComplete { tag: "INSERT 1".to_string() },
+                ];
+                let _ = socket.write_all(&encode_messages(&messages)).await;
+            }
+            if was_implicit_txn {
+                if let Some(xid) = current_xid {
+                    let _ = wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await;
+                    let _ = txn_mgr.commit(*xid);
+                    let _ = wal.lock().await.flush().await;
+                }
+                *current_xid = None;
+            }
+            let ready_messages = vec![
+                BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
+            ];
+            let _ = socket.write_all(&encode_messages(&ready_messages)).await;
+        }
+        Query::Update { table, column: _, value, where_clause } => {
+            let was_implicit_txn = current_xid.is_none();
+            if was_implicit_txn {
+                let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
+                *current_xid = Some(xid);
+                let _ = wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await;
+            }
+            let filter = where_clause.as_ref().map(|s| parse_filter(s)).transpose();
+            match filter {
+                Ok(filter) => {
+                    match crate::executor::heap::tuple_update(cache, &*wal.lock().await, *table, 0, value, filter).await {
+                        Ok(updated) => {
+                            let messages = vec![
+                                BackendMessage::CommandComplete { tag: format!("UPDATE {}", updated) },
                             ];
                             let _ = socket.write_all(&encode_messages(&messages)).await;
                         }
+                        Err(e) => send_error(socket, e.to_string()).await,
                     }
-                    if was_implicit_txn {
-                        if let Some(xid) = current_xid {
-                            wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await?;
-                            let _ = txn_mgr.commit(xid);
-                            wal.lock().await.flush().await?;
+                }
+                Err(e) => send_error(socket, e.to_string()).await,
+            }
+            if was_implicit_txn {
+                if let Some(xid) = current_xid {
+                    let _ = wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await;
+                    let _ = txn_mgr.commit(*xid);
+                    let _ = wal.lock().await.flush().await;
+                }
+                *current_xid = None;
+            }
+            let ready_messages = vec![
+                BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
+            ];
+            let _ = socket.write_all(&encode_messages(&ready_messages)).await;
+        }
+        Query::Delete { table, where_clause } => {
+            let was_implicit_txn = current_xid.is_none();
+            if was_implicit_txn {
+                let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
+                *current_xid = Some(xid);
+                let _ = wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await;
+            }
+            let filter = where_clause.as_ref().map(|s| parse_filter(s)).transpose();
+            match filter {
+                Ok(filter) => {
+                    match crate::executor::heap::tuple_delete(cache, &*wal.lock().await, *table, filter).await {
+                        Ok(deleted) => {
+                            let messages = vec![
+                                BackendMessage::CommandComplete { tag: format!("DELETE {}", deleted) },
+                            ];
+                            let _ = socket.write_all(&encode_messages(&messages)).await;
                         }
-                        current_xid = None;
+                        Err(e) => send_error(socket, e.to_string()).await,
                     }
-                    let ready_messages = vec![
-                        BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
+                }
+                Err(e) => send_error(socket, e.to_string()).await,
+            }
+            if was_implicit_txn {
+                if let Some(xid) = current_xid {
+                    let _ = wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await;
+                    let _ = txn_mgr.commit(*xid);
+                    let _ = wal.lock().await.flush().await;
+                }
+                *current_xid = None;
+            }
+            let ready_messages = vec![
+                BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
+            ];
+            let _ = socket.write_all(&encode_messages(&ready_messages)).await;
+        }
+        Query::Select { table: _, where_clause: _, columns: _ } => {
+            let was_implicit_txn = current_xid.is_none();
+            if was_implicit_txn {
+                let xid = txn_mgr.begin(IsolationLevel::ReadCommitted);
+                *current_xid = Some(xid);
+                let _ = wal.lock().await.append(&crate::wal::WALRecord::Begin { xid: xid.0 as u64 }).await;
+            }
+            let plan = Planner::plan(query, &[]);
+            match plan {
+                crate::executor::Plan::SeqScan(scan) => {
+                    if scan.filter.is_none() {
+                        if let Err(e) = execute_seq_scan(cache, scan.rel_oid, socket).await {
+                            send_error(socket, e.to_string()).await;
+                        }
+                    } else {
+                        if let Err(e) = execute_slow_scan(cache, scan.rel_oid, scan.filter.clone().unwrap(), socket).await {
+                            send_error(socket, e.to_string()).await;
+                        }
+                    }
+                }
+                crate::executor::Plan::IndexScan(_) => {
+                    let messages: Vec<BackendMessage> = vec![
+                        BackendMessage::CommandComplete { tag: "SELECT 0".to_string() },
                     ];
-                    let _ = socket.write_all(&encode_messages(&ready_messages)).await;
+                    let _ = socket.write_all(&encode_messages(&messages)).await;
                 }
             }
+            if was_implicit_txn {
+                if let Some(xid) = current_xid {
+                    let _ = wal.lock().await.append(&crate::wal::WALRecord::Commit { xid: xid.0 as u64 }).await;
+                    let _ = txn_mgr.commit(*xid);
+                    let _ = wal.lock().await.flush().await;
+                }
+                *current_xid = None;
+            }
+            let ready_messages = vec![
+                BackendMessage::ReadyForQuery { status: if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle } },
+            ];
+            let _ = socket.write_all(&encode_messages(&ready_messages)).await;
         }
     }
 }

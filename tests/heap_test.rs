@@ -306,3 +306,144 @@ async fn test_delete_on_empty_table() {
     let deleted = tuple_delete(&cache, &wal, rel_oid, None).await.unwrap();
     assert_eq!(deleted, 0);
 }
+
+#[test]
+fn test_mvcc_visible_committed_tuple() {
+    use postgress_rs::transaction::{Snapshot, TransactionId};
+    use postgress_rs::types::Tuple;
+
+    let tup = Tuple {
+        slots: vec![],
+        data: vec![],
+        xmin: 5,
+        xmax: 0,
+        cmin: 0,
+        cmax: 0,
+        xvac: 0,
+    };
+    let snapshot = Snapshot {
+        xid: TransactionId(10),
+        active_xids: vec![],
+    };
+    assert!(is_visible(&tup, &snapshot));
+}
+
+#[test]
+fn test_mvcc_invisible_uncommitted_tuple() {
+    use postgress_rs::transaction::{Snapshot, TransactionId};
+    use postgress_rs::types::Tuple;
+
+    let tup = Tuple {
+        slots: vec![],
+        data: vec![],
+        xmin: 8,
+        xmax: 0,
+        cmin: 0,
+        cmax: 0,
+        xvac: 0,
+    };
+    let snapshot = Snapshot {
+        xid: TransactionId(10),
+        active_xids: vec![TransactionId(8)],
+    };
+    assert!(!is_visible(&tup, &snapshot));
+}
+
+#[test]
+fn test_mvcc_invisible_deleted_tuple() {
+    use postgress_rs::transaction::{Snapshot, TransactionId};
+    use postgress_rs::types::Tuple;
+
+    let tup = Tuple {
+        slots: vec![],
+        data: vec![],
+        xmin: 5,
+        xmax: 7,
+        cmin: 0,
+        cmax: 0,
+        xvac: 0,
+    };
+    let snapshot = Snapshot {
+        xid: TransactionId(10),
+        active_xids: vec![],
+    };
+    assert!(!is_visible(&tup, &snapshot));
+}
+
+#[test]
+fn test_mvcc_visible_tuple_with_active_delete_xid() {
+    use postgress_rs::transaction::{Snapshot, TransactionId};
+    use postgress_rs::types::Tuple;
+
+    let tup = Tuple {
+        slots: vec![],
+        data: vec![],
+        xmin: 5,
+        xmax: 8,
+        cmin: 0,
+        cmax: 0,
+        xvac: 0,
+    };
+    let snapshot = Snapshot {
+        xid: TransactionId(10),
+        active_xids: vec![TransactionId(8)],
+    };
+    assert!(is_visible(&tup, &snapshot));
+}
+
+#[test]
+fn test_mvcc_invisible_zero_xmin() {
+    use postgress_rs::transaction::{Snapshot, TransactionId};
+    use postgress_rs::types::Tuple;
+
+    let tup = Tuple {
+        slots: vec![],
+        data: vec![],
+        xmin: 0,
+        xmax: 0,
+        cmin: 0,
+        cmax: 0,
+        xvac: 0,
+    };
+    let snapshot = Snapshot {
+        xid: TransactionId(10),
+        active_xids: vec![],
+    };
+    assert!(!is_visible(&tup, &snapshot));
+}
+
+#[test]
+fn test_mvcc_invisible_future_xmin() {
+    use postgress_rs::transaction::{Snapshot, TransactionId};
+    use postgress_rs::types::Tuple;
+
+    let tup = Tuple {
+        slots: vec![],
+        data: vec![],
+        xmin: 15,
+        xmax: 0,
+        cmin: 0,
+        cmax: 0,
+        xvac: 0,
+    };
+    let snapshot = Snapshot {
+        xid: TransactionId(10),
+        active_xids: vec![],
+    };
+    assert!(!is_visible(&tup, &snapshot));
+}
+
+#[tokio::test]
+async fn test_heap_scan_with_snapshot() {
+    let (_, wal, cache, catalog) = setup().await;
+    let rel_oid = create_test_table(&cache, &catalog).await;
+    tuple_insert(&cache, &wal, &TupleInsert { rel_oid, values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()] }).await.unwrap();
+
+    let snapshot = postgress_rs::transaction::Snapshot {
+        xid: postgress_rs::transaction::TransactionId(u32::MAX),
+        active_xids: vec![],
+    };
+    let rows = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].1[1], "alice");
+}

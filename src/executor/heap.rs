@@ -1,6 +1,7 @@
 use crate::types::{PageId, Tuple, TupleDesc, Oid};
 use crate::buffer_cache::SharedBufferCache;
 use crate::storage::StorageTrait;
+use crate::transaction::Snapshot;
 
 pub struct TupleInsert {
     pub rel_oid: Oid,
@@ -31,8 +32,30 @@ pub struct Filter {
     pub value: Vec<u8>,
 }
 
-fn is_visible(tup: &Tuple) -> bool {
-    tup.xmin != 0 && tup.xmax == 0
+pub fn is_visible(tup: &Tuple, snapshot: &Snapshot) -> bool {
+    if tup.xmin == 0 {
+        return false;
+    }
+
+    let xmin = crate::transaction::TransactionId(tup.xmin as u32);
+    let xmax = if tup.xmax != 0 {
+        Some(crate::transaction::TransactionId(tup.xmax as u32))
+    } else {
+        None
+    };
+
+    let xmin_visible = !snapshot.active_xids.contains(&xmin) && xmin.0 < snapshot.xid.0;
+    if !xmin_visible {
+        return false;
+    }
+
+    if let Some(xmax) = xmax {
+        if !snapshot.active_xids.contains(&xmax) && xmax.0 < snapshot.xid.0 {
+            return false;
+        }
+    }
+
+    true
 }
 
 pub async fn tuple_insert(
@@ -116,6 +139,11 @@ pub async fn heap_scan(cache: &SharedBufferCache, rel_oid: u32) -> anyhow::Resul
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
+    let snapshot = Snapshot {
+        xid: crate::transaction::TransactionId(u32::MAX),
+        active_xids: vec![],
+    };
+
     let mut rows = Vec::new();
     for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
         let page = cache.storage.read_page(page_id)?;
@@ -126,7 +154,43 @@ pub async fn heap_scan(cache: &SharedBufferCache, rel_oid: u32) -> anyhow::Resul
                 break;
             }
             if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+len]) {
-                if !is_visible(&tup) {
+                if !is_visible(&tup, &snapshot) {
+                    offset += 4 + len;
+                    continue;
+                }
+                let tid = crate::types::ItemPointerData {
+                    page_id,
+                    offset: offset as u16,
+                };
+                let values = decode_tuple_values(&tup, &rel.tuple_desc);
+                rows.push((tid, values));
+            }
+            offset += 4 + len;
+        }
+    }
+    Ok(rows)
+}
+
+pub async fn heap_scan_with_snapshot(
+    cache: &SharedBufferCache,
+    rel_oid: u32,
+    snapshot: &Snapshot,
+) -> anyhow::Result<Vec<(crate::types::ItemPointerData, Vec<String>)>> {
+    let state = cache.get_relation_state(Oid(rel_oid)).ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
+    let rel_state = state.lock();
+    let rel = &rel_state.relation;
+
+    let mut rows = Vec::new();
+    for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
+        let page = cache.storage.read_page(page_id)?;
+        let mut offset = 0;
+        while offset + 4 <= page.len() {
+            let len = u32::from_le_bytes([page[offset], page[offset+1], page[offset+2], page[offset+3]]) as usize;
+            if len == 0 || offset + 4 + len > page.len() {
+                break;
+            }
+            if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+len]) {
+                if !is_visible(&tup, snapshot) {
                     offset += 4 + len;
                     continue;
                 }
@@ -148,6 +212,11 @@ pub async fn slow_scan(cache: &SharedBufferCache, op: &SlowScan) -> anyhow::Resu
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
+    let snapshot = Snapshot {
+        xid: crate::transaction::TransactionId(u32::MAX),
+        active_xids: vec![],
+    };
+
     let mut rows = Vec::new();
     for (_page_idx, &page_id) in rel.pages.iter().enumerate() {
         let page = cache.storage.read_page(page_id)?;
@@ -158,7 +227,7 @@ pub async fn slow_scan(cache: &SharedBufferCache, op: &SlowScan) -> anyhow::Resu
                 break;
             }
             if let Ok(tup) = bincode::deserialize::<Tuple>(&page[offset+4..offset+4+len]) {
-                if !is_visible(&tup) {
+                if !is_visible(&tup, &snapshot) {
                     offset += 4 + len;
                     continue;
                 }
