@@ -171,7 +171,7 @@
 - [x] GiST for full-text search
 
 ### 5.5 BRIN (Block Range Index)
-- [ ] BRIN for large tables with natural ordering
+- [x] BRIN for large tables with natural ordering
 
 ---
 
