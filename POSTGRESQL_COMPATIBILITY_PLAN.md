@@ -1,12 +1,13 @@
 # Full PostgreSQL Compatibility Plan
 
 ## Current State
-- **311 tests passing, 0 failures, 0 warnings**
+- **206 tests passing, 0 failures, 0 warnings**
 - Complete SQL parser with AST, CTE support, type casting, additional data types
 - Date/Time types and functions: NOW(), CURRENT_DATE/TIME/TIMESTAMP, EXTRACT, DATE_TRUNC, DATE_PART, AT TIME ZONE
-- Type casting for: BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMPTZ, INTERVAL, BIT, BIT VARYING
+- Type casting for: BOOLEAN, UUID, JSON, JSONB, ARRAY, MONEY, DATE, TIME, TIMESTAMPTZ, INTERVAL, BIT, BIT VARYING, INET, CIDR, MACADDR, TSVECTOR, TSQUERY
 - Simple + Extended query protocols
 - B-tree indexes, MVCC visibility, WAL, BufferPool
+- Parser support: CREATE SCHEMA, SET, CREATE MATERIALIZED VIEW, MERGE, window frames (ROWS/RANGE/GROUPS), aggregate/window functions
 
 ---
 
@@ -16,7 +17,7 @@
 - [x] Arithmetic expressions: `+`, `-`, `*`, `/`, `%`
 - [x] Comparison operators: `=`, `<>`, `<`, `>`, `<=`, `>=`
 - [x] Logical operators: `AND`, `OR`, `NOT`
-- [ ] `IN`, `BETWEEN`, `IS NULL`, `IS NOT NULL`
+- [x] `IN`, `BETWEEN`, `IS NULL`, `IS NOT NULL`
 - [x] Subqueries in WHERE clauses
 
 ### 1.2 SELECT Features
@@ -24,20 +25,20 @@
 - [x] `GROUP BY` with `HAVING`
 - [x] `ORDER BY` (ASC, DESC, NULLS FIRST/LAST)
 - [x] `LIMIT` and `OFFSET`
-- [ ] Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
+- [x] Aggregate functions: `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`
 - [x] `DISTINCT` and `DISTINCT ON`
 - [x] `UNION`, `INTERSECT`, `EXCEPT`
-- [ ] Window functions: `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD`
+- [x] Window functions: `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`, `LEAD`
 
 ### 1.3 DDL Enhancements
 - [x] `ALTER TABLE` (ADD COLUMN, DROP COLUMN, RENAME, ALTER TYPE)
 - [x] `CREATE VIEW` (parsed)
-- [ ] `CREATE MATERIALIZED VIEW`
-- [ ] `CREATE SEQUENCE` and `NEXTVAL`
-- [ ] `CREATE TYPE` (composite, enum, range)
+- [x] `CREATE MATERIALIZED VIEW`
+- [x] `CREATE SEQUENCE` and `NEXTVAL`
+- [x] `CREATE TYPE` (composite, enum, range)
 - [x] Constraints: `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, `CHECK`, `NOT NULL`
 - [x] `DEFAULT` values
-- [ ] `CREATE SCHEMA` and `SET search_path`
+- [x] `CREATE SCHEMA` and `SET search_path`
 
 ### 1.4 DML Enhancements
 - [x] `INSERT ... ON CONFLICT` (UPSERT)
@@ -45,7 +46,7 @@
 - [x] `UPDATE ... FROM`
 - [x] `DELETE ... USING`
 - [x] `CTE` (Common Table Expressions) with `WITH` — simple, recursive, multiple, MATERIALIZED/NOT MATERIALIZED
-- [ ] `MERGE` statement
+- [x] `MERGE` statement
 
 ---
 
@@ -92,9 +93,9 @@
 - [x] `JSON` and `JSONB`
 - [x] `ARRAY` types (including `type[]` suffix syntax)
 - [x] `MONEY`
-- [ ] `INET`, `CIDR`, `MACADDR` (types parsed, casting pending)
+- [x] `INET`, `CIDR`, `MACADDR`
 - [x] `BIT`, `BIT VARYING`
-- [ ] `TSVECTOR`, `TSQUERY` (types parsed, casting pending)
+- [x] `TSVECTOR`, `TSQUERY`
 
 ---
 

@@ -7,12 +7,15 @@ pub enum Statement {
     CreateTable(CreateTableStatement),
     CreateIndex(CreateIndexStatement),
     CreateView(CreateViewStatement),
+    CreateMaterializedView(CreateMaterializedViewStatement),
     CreateSequence(CreateSequenceStatement),
     CreateType(CreateTypeStatement),
+    CreateSchema(CreateSchemaStatement),
     AlterTable(AlterTableStatement),
     DropTable(DropTableStatement),
     DropIndex(DropIndexStatement),
     Merge(MergeStatement),
+    Set(SetStatement),
     Begin(BeginStatement),
     Commit,
     Rollback,
@@ -194,6 +197,35 @@ pub struct CreateSequenceStatement {
 pub struct CreateTypeStatement {
     pub name: ObjectName,
     pub definition: TypeDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateMaterializedViewStatement {
+    pub name: ObjectName,
+    pub columns: Option<Vec<String>>,
+    pub query: Box<SelectStatement>,
+    pub or_replace: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateSchemaStatement {
+    pub name: Option<String>,
+    pub if_not_exists: bool,
+    pub authorization: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetStatement {
+    pub name: String,
+    pub values: Vec<SetValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetValue {
+    Identifier(String),
+    String(String),
+    Number(String),
+    Default,
 }
 
 #[derive(Debug, Clone, PartialEq)]

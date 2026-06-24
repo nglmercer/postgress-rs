@@ -207,7 +207,8 @@ pub(crate) fn tokenize(sql: &str) -> Vec<Token> {
                     "SEQUENCE" | "INCREMENT" | "CACHE" | "CYCLE" | "OWNED" | "MINVALUE" | "MAXVALUE" |
                     "MERGE" | "MATCHED" | "SOURCE" | "TARGET" |
                     "COMPOSITE" | "ENUM" |
-                    "NOCYCLE" | "NO" | "NOMINVALUE" | "NOMAXVALUE" | "NOCACHE" => {
+                    "NOCYCLE" | "NO" | "NOMINVALUE" | "NOMAXVALUE" | "NOCACHE" |
+                    "SCHEMA" | "AUTHORIZATION" | "SESSION" | "LOCAL" | "CHARACTERISTICS" => {
                         tokens.push(Token::Keyword(s));
                     }
                     _ => {

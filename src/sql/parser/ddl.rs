@@ -165,8 +165,8 @@ impl Parser {
                 }))
             }
             Token::Keyword(k) if k.to_uppercase() == "VIEW" => {
-                self.advance();
                 let or_replace = false;
+                self.advance();
                 let mut parts = vec![self.expect_ident()?];
                 while matches!(self.peek(), Token::Dot) {
                     self.advance();
@@ -200,6 +200,43 @@ impl Parser {
                     or_replace,
                 }))
             }
+            Token::Keyword(k) if k.to_uppercase() == "MATERIALIZED" => {
+                self.advance();
+                self.expect_keyword("VIEW")?;
+                let or_replace = false;
+                let mut parts = vec![self.expect_ident()?];
+                while matches!(self.peek(), Token::Dot) {
+                    self.advance();
+                    parts.push(self.expect_ident()?);
+                }
+                let name = ObjectName::new(parts);
+
+                let columns = if matches!(self.peek(), Token::LParen) {
+                    self.advance();
+                    let mut cols = Vec::new();
+                    loop {
+                        cols.push(self.expect_ident()?);
+                        if !matches!(self.peek(), Token::Comma) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                    self.expect(&Token::RParen)?;
+                    Some(cols)
+                } else {
+                    None
+                };
+
+                self.expect_keyword("AS")?;
+                let query = self.parse_select()?;
+
+                Ok(Statement::CreateMaterializedView(CreateMaterializedViewStatement {
+                    name,
+                    columns,
+                    query: Box::new(query),
+                    or_replace,
+                }))
+            }
             Token::Keyword(k) if k.to_uppercase() == "SEQUENCE" => {
                 self.advance();
                 self.parse_create_sequence()
@@ -208,7 +245,11 @@ impl Parser {
                 self.advance();
                 self.parse_create_type()
             }
-            _ => anyhow::bail!("expected TABLE, INDEX, VIEW, SEQUENCE, or TYPE after CREATE"),
+            Token::Keyword(k) if k.to_uppercase() == "SCHEMA" => {
+                self.advance();
+                self.parse_create_schema()
+            }
+            _ => anyhow::bail!("expected TABLE, INDEX, VIEW, MATERIALIZED VIEW, SEQUENCE, TYPE, or SCHEMA after CREATE"),
         }
     }
 
@@ -944,6 +985,41 @@ impl Parser {
         Ok(Statement::CreateType(CreateTypeStatement {
             name,
             definition,
+        }))
+    }
+
+    pub(crate) fn parse_create_schema(&mut self) -> anyhow::Result<Statement> {
+        let if_not_exists = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF") {
+            self.advance();
+            self.expect_keyword("NOT")?;
+            self.expect_keyword("EXISTS")?;
+            true
+        } else {
+            false
+        };
+
+        let mut name = None;
+        let mut authorization = None;
+
+        match self.peek() {
+            Token::Keyword(k) if k.to_uppercase() == "AUTHORIZATION" => {
+                self.advance();
+                authorization = Some(self.expect_ident()?);
+            }
+            Token::Ident(_) | Token::Keyword(_) => {
+                name = Some(self.expect_ident()?);
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AUTHORIZATION") {
+                    self.advance();
+                    authorization = Some(self.expect_ident()?);
+                }
+            }
+            _ => {}
+        }
+
+        Ok(Statement::CreateSchema(CreateSchemaStatement {
+            name,
+            if_not_exists,
+            authorization,
         }))
     }
 }

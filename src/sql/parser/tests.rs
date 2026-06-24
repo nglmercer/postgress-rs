@@ -2170,3 +2170,105 @@ use crate::sql::ast::*;
         }
     }
 
+    // CREATE SCHEMA tests
+
+    #[test]
+    fn test_create_schema_simple() {
+        let stmt = Parser::parse("CREATE SCHEMA myschema").unwrap();
+        match stmt {
+            Statement::CreateSchema(schema) => {
+                assert_eq!(schema.name, Some("myschema".to_string()));
+                assert!(!schema.if_not_exists);
+                assert!(schema.authorization.is_none());
+            }
+            _ => panic!("expected CreateSchema"),
+        }
+    }
+
+    #[test]
+    fn test_create_schema_with_if_not_exists() {
+        let stmt = Parser::parse("CREATE SCHEMA IF NOT EXISTS myschema").unwrap();
+        match stmt {
+            Statement::CreateSchema(schema) => {
+                assert_eq!(schema.name, Some("myschema".to_string()));
+                assert!(schema.if_not_exists);
+            }
+            _ => panic!("expected CreateSchema"),
+        }
+    }
+
+    #[test]
+    fn test_create_schema_with_authorization() {
+        let stmt = Parser::parse("CREATE SCHEMA AUTHORIZATION alice").unwrap();
+        match stmt {
+            Statement::CreateSchema(schema) => {
+                assert!(schema.name.is_none());
+                assert_eq!(schema.authorization, Some("alice".to_string()));
+            }
+            _ => panic!("expected CreateSchema"),
+        }
+    }
+
+    // SET tests
+
+    #[test]
+    fn test_set_search_path() {
+        let stmt = Parser::parse("SET search_path = public").unwrap();
+        match stmt {
+            Statement::Set(set) => {
+                assert_eq!(set.name, "search_path");
+                assert_eq!(set.values.len(), 1);
+                match &set.values[0] {
+                    SetValue::Identifier(s) => assert_eq!(s, "public"),
+                    other => panic!("expected Identifier, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Set"),
+        }
+    }
+
+    #[test]
+    fn test_set_time_zone() {
+        let stmt = Parser::parse("SET TIME ZONE 'UTC'").unwrap();
+        match stmt {
+            Statement::Set(set) => {
+                assert_eq!(set.name, "TIME ZONE");
+                assert_eq!(set.values.len(), 1);
+                match &set.values[0] {
+                    SetValue::String(s) => assert_eq!(s, "UTC"),
+                    other => panic!("expected String, got {:?}", other),
+                }
+            }
+            _ => panic!("expected Set"),
+        }
+    }
+
+    #[test]
+    fn test_set_to_keyword() {
+        let stmt = Parser::parse("SET search_path TO public, pg_temp").unwrap();
+        match stmt {
+            Statement::Set(set) => {
+                assert_eq!(set.name, "search_path");
+                assert_eq!(set.values.len(), 2);
+            }
+            _ => panic!("expected Set"),
+        }
+    }
+
+    // CREATE MATERIALIZED VIEW tests
+
+    #[test]
+    fn test_create_materialized_view() {
+        let stmt = Parser::parse(
+            "CREATE MATERIALIZED VIEW my_view AS SELECT id, amount FROM orders"
+        ).unwrap();
+        match stmt {
+            Statement::CreateMaterializedView(mv) => {
+                assert_eq!(mv.name.parts, vec!["my_view"]);
+                assert!(!mv.or_replace);
+                assert!(mv.columns.is_none());
+            }
+            _ => panic!("expected CreateMaterializedView"),
+        }
+    }
+

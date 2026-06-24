@@ -595,6 +595,15 @@ async fn handle_statement(
         Statement::CreateType(_) => {
             send_error(socket, "CREATE TYPE not yet supported".to_string()).await;
         }
+        Statement::CreateMaterializedView(_) => {
+            send_error(socket, "CREATE MATERIALIZED VIEW not yet supported".to_string()).await;
+        }
+        Statement::CreateSchema(_) => {
+            send_error(socket, "CREATE SCHEMA not yet supported".to_string()).await;
+        }
+        Statement::Set(_) => {
+            send_error(socket, "SET not yet supported".to_string()).await;
+        }
         Statement::Merge(_) => {
             send_error(socket, "MERGE not yet supported".to_string()).await;
         }
