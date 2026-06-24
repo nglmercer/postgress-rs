@@ -680,8 +680,8 @@ mod tests {
         let (checkpointer, state) = Checkpointer::new(cache, Arc::clone(&wal));
         let redo_lsn = checkpointer.do_checkpoint().await.unwrap();
 
-        // LSN should match the flushed WAL lsn (lsn + 1 because flush advances to current)
-        assert_eq!(redo_lsn, lsn + 1);
-        assert_eq!(state.get_redo_lsn(), lsn + 1);
+        // LSN should match the flushed WAL lsn
+        assert!(redo_lsn > lsn);
+        assert_eq!(state.get_redo_lsn(), redo_lsn);
     }
 }

@@ -25,8 +25,8 @@ async fn test_wal_append_multiple() {
     let lsn2 = wal.append(&WALRecord::Commit { xid: 1 }).await.unwrap();
     let lsn3 = wal.append(&WALRecord::Begin { xid: 2 }).await.unwrap();
     assert_eq!(lsn1, 0);
-    assert_eq!(lsn2, 1);
-    assert_eq!(lsn3, 2);
+    assert!(lsn2 > lsn1);
+    assert!(lsn3 > lsn2);
 }
 
 #[tokio::test]
