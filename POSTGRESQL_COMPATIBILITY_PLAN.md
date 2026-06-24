@@ -126,11 +126,11 @@
 
 ## Milestone 4: MVCC and Transactions (M5 from ROADMAP)
 
-### 4.1 Transaction Management
-- [ ] Transaction ID wraparound handling
-- [ ] Freeze transactions (prevent wraparound)
-- [ ] Transaction status map (clog)
-- [ ] Subtransactions and savepoints
+### 4.1 Transaction Management (DONE)
+- [x] Transaction ID wraparound handling — `is_xid_wraparound_imminent()`, `advance_next_xid()`, wraparound threshold at 0x3FFFFFFF
+- [x] Freeze transactions — tuples with `xmin=0` are permanently visible; `vacuum_relation()` rewrites eligible tuples with `xmin=0` below freeze cutoff
+- [x] Commit log (CLOG) — `src/transaction/clog.rs`: in-memory `RwLock<HashMap<u32, TxnStatus>>` with `InProgress`/`Committed`/`Aborted`; integrated into `TransactionManager::begin/commit/rollback`
+- [x] Subtransactions and SAVEPOINT support — `begin_subtransaction()`, `release_subtransaction()`, `rollback_to_subtransaction()`; sub-xids in upper half of 32-bit space
 
 ### 4.2 Locking
 - [x] Table-level locks (ACCESS SHARE, ROW SHARE, ROW EXCLUSIVE, etc.)
@@ -166,9 +166,9 @@
 - [x] GIN for JSONB containment
 
 ### 5.4 GiST (Generalized Search Tree)
-- [ ] GiST for geometric types
-- [ ] GiST for range types
-- [ ] GiST for full-text search
+- [x] GiST for geometric types
+- [x] GiST for range types
+- [x] GiST for full-text search
 
 ### 5.5 BRIN (Block Range Index)
 - [ ] BRIN for large tables with natural ordering
