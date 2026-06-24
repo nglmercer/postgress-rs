@@ -1,3 +1,5 @@
+pub mod statistics;
+
 use crate::types::{Oid, PageId, Relation};
 use crate::storage::StorageTrait;
 use crate::buffer_cache::SharedBufferCache;

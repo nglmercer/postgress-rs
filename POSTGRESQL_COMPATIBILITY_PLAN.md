@@ -190,8 +190,8 @@
 
 ### 6.2 Query Planner
 - [ ] Cost-based optimizer (CBO)
-- [ ] Statistics collection (pg_statistic)
-- [ ] Selectivity estimation
+- [x] Statistics collection (pg_statistic)
+- [x] Selectivity estimation
 - [ ] Join order optimization
 - [ ] Parallel query execution
 - [ ] JIT compilation
