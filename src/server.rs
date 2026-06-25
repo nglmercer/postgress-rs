@@ -5,28 +5,29 @@ pub mod utils;
 pub use eval::{evaluate_expr, evaluate_where};
 pub use utils::build_select_messages;
 
-use crate::protocol::parser::Parser;
-use crate::protocol::backend::{BackendMessage, TransactionStatus};
-use crate::protocol::FrontendMessage;
-use crate::protocol::ExtendedQueryState;
 use crate::buffer_cache::SharedBufferCache;
 use crate::catalog::Catalog;
-use crate::wal::WAL;
-use crate::transaction::{TransactionManager, TransactionId};
+use crate::protocol::backend::{BackendMessage, TransactionStatus};
+use crate::protocol::parser::Parser;
+use crate::protocol::ExtendedQueryState;
+use crate::protocol::FrontendMessage;
 use crate::storage::ephemeral::EphemeralStorage;
+use crate::transaction::{TransactionId, TransactionManager};
+use crate::wal::WAL;
 use std::sync::Arc;
-use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 
 use query::handle_query;
 use utils::{encode, send_error};
 
 pub async fn run(port: u16, data_dir: String) -> anyhow::Result<()> {
-    let storage: Arc<dyn crate::storage::StorageTrait> = if data_dir == ":memory:" || data_dir.is_empty() {
-        Arc::new(EphemeralStorage::new())
-    } else {
-        Arc::new(crate::storage::mmap::MmapStorage::open(&data_dir, 8192).await?)
-    };
+    let storage: Arc<dyn crate::storage::StorageTrait> =
+        if data_dir == ":memory:" || data_dir.is_empty() {
+            Arc::new(EphemeralStorage::new())
+        } else {
+            Arc::new(crate::storage::mmap::MmapStorage::open(&data_dir, 8192).await?)
+        };
 
     let wal = Arc::new(tokio::sync::Mutex::new(WAL::new(8192)));
     let cache = Arc::new(SharedBufferCache::new(storage.clone()));
@@ -49,7 +50,8 @@ pub async fn run(port: u16, data_dir: String) -> anyhow::Result<()> {
         let txn_mgr = txn_mgr.clone();
         let lock_mgr = lock_mgr.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(socket, cache, catalog, wal, txn_mgr, lock_mgr).await {
+            if let Err(e) = handle_connection(socket, cache, catalog, wal, txn_mgr, lock_mgr).await
+            {
                 tracing::error!("connection error: {}", e);
             }
         });
@@ -70,17 +72,45 @@ pub async fn handle_connection(
     let mut ext_state = ExtendedQueryState::new();
 
     let startup_messages: Vec<BackendMessage> = vec![
-        BackendMessage::BackendKeyData { pid: std::process::id(), secret: 12345 },
-        BackendMessage::ParameterStatus { name: "client_encoding".to_string(), value: "UTF8".to_string() },
-        BackendMessage::ParameterStatus { name: "server_version".to_string(), value: "170000".to_string() },
-        BackendMessage::ParameterStatus { name: "server_encoding".to_string(), value: "UTF8".to_string() },
-        BackendMessage::ParameterStatus { name: "DateStyle".to_string(), value: "ISO, MDY".to_string() },
-        BackendMessage::ParameterStatus { name: "TimeZone".to_string(), value: "Etc/UTC".to_string() },
-        BackendMessage::ParameterStatus { name: "integer_datetimes".to_string(), value: "on".to_string() },
-        BackendMessage::ParameterStatus { name: "standard_conforming_strings".to_string(), value: "on".to_string() },
-        BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
+        BackendMessage::BackendKeyData {
+            pid: std::process::id(),
+            secret: 12345,
+        },
+        BackendMessage::ParameterStatus {
+            name: "client_encoding".to_string(),
+            value: "UTF8".to_string(),
+        },
+        BackendMessage::ParameterStatus {
+            name: "server_version".to_string(),
+            value: "170000".to_string(),
+        },
+        BackendMessage::ParameterStatus {
+            name: "server_encoding".to_string(),
+            value: "UTF8".to_string(),
+        },
+        BackendMessage::ParameterStatus {
+            name: "DateStyle".to_string(),
+            value: "ISO, MDY".to_string(),
+        },
+        BackendMessage::ParameterStatus {
+            name: "TimeZone".to_string(),
+            value: "Etc/UTC".to_string(),
+        },
+        BackendMessage::ParameterStatus {
+            name: "integer_datetimes".to_string(),
+            value: "on".to_string(),
+        },
+        BackendMessage::ParameterStatus {
+            name: "standard_conforming_strings".to_string(),
+            value: "on".to_string(),
+        },
+        BackendMessage::ReadyForQuery {
+            status: TransactionStatus::Idle,
+        },
     ];
-    let _ = socket.write_all(&crate::protocol::encode(&startup_messages)).await;
+    let _ = socket
+        .write_all(&crate::protocol::encode(&startup_messages))
+        .await;
 
     loop {
         let n = match socket.read(&mut buf).await {
@@ -98,38 +128,80 @@ pub async fn handle_connection(
                 match msg {
                     FrontendMessage::Query { sql } => {
                         if let Some(query) = parser.feed(sql.as_bytes()) {
-                            handle_query(&query, &catalog, &cache, &wal, &txn_mgr, &mut ext_state, &mut current_xid, &mut socket).await;
+                            handle_query(
+                                &query,
+                                &catalog,
+                                &cache,
+                                &wal,
+                                &txn_mgr,
+                                &mut ext_state,
+                                &mut current_xid,
+                                &mut socket,
+                            )
+                            .await;
                         }
                     }
-                    FrontendMessage::Parse { name, sql, parameter_types } => {
-                        match ext_state.prepare(&name, &sql, parameter_types) {
+                    FrontendMessage::Parse {
+                        name,
+                        sql,
+                        parameter_types,
+                    } => match ext_state.prepare(&name, &sql, parameter_types) {
+                        Ok(()) => {
+                            let _ = socket
+                                .write_all(&encode(BackendMessage::ParseComplete))
+                                .await;
+                        }
+                        Err(e) => {
+                            send_error(&mut socket, e.to_string()).await;
+                        }
+                    },
+                    FrontendMessage::Bind {
+                        portal,
+                        statement,
+                        parameter_formats: _,
+                        parameter_values,
+                        result_formats,
+                    } => {
+                        match ext_state.bind(&portal, &statement, parameter_values, result_formats)
+                        {
                             Ok(()) => {
-                                let _ = socket.write_all(&encode(BackendMessage::ParseComplete)).await;
+                                let _ = socket
+                                    .write_all(&encode(BackendMessage::BindComplete))
+                                    .await;
                             }
                             Err(e) => {
                                 send_error(&mut socket, e.to_string()).await;
                             }
                         }
                     }
-                    FrontendMessage::Bind { portal, statement, parameter_formats: _, parameter_values, result_formats } => {
-                        match ext_state.bind(&portal, &statement, parameter_values, result_formats) {
-                            Ok(()) => {
-                                let _ = socket.write_all(&encode(BackendMessage::BindComplete)).await;
-                            }
-                            Err(e) => {
-                                send_error(&mut socket, e.to_string()).await;
-                            }
-                        }
-                    }
-                    FrontendMessage::Execute { portal, max_rows: _ } => {
+                    FrontendMessage::Execute {
+                        portal,
+                        max_rows: _,
+                    } => {
                         if let Some(portal) = ext_state.get_portal(&portal) {
                             let query = portal.query.clone();
-                            handle_query(&query, &catalog, &cache, &wal, &txn_mgr, &mut ext_state, &mut current_xid, &mut socket).await;
+                            handle_query(
+                                &query,
+                                &catalog,
+                                &cache,
+                                &wal,
+                                &txn_mgr,
+                                &mut ext_state,
+                                &mut current_xid,
+                                &mut socket,
+                            )
+                            .await;
                         }
                     }
                     FrontendMessage::Sync => {
-                        let tx_status = if current_xid.is_some() { TransactionStatus::InTransaction } else { TransactionStatus::Idle };
-                        let _ = socket.write_all(&encode(BackendMessage::ReadyForQuery { status: tx_status })).await;
+                        let tx_status = if current_xid.is_some() {
+                            TransactionStatus::InTransaction
+                        } else {
+                            TransactionStatus::Idle
+                        };
+                        let _ = socket
+                            .write_all(&encode(BackendMessage::ReadyForQuery { status: tx_status }))
+                            .await;
                     }
                     FrontendMessage::Describe { kind, name: _ } => {
                         if kind == b'S' {
@@ -144,7 +216,9 @@ pub async fn handle_connection(
                         } else {
                             ext_state.close_portal(&name);
                         }
-                        let _ = socket.write_all(&encode(BackendMessage::CloseComplete)).await;
+                        let _ = socket
+                            .write_all(&encode(BackendMessage::CloseComplete))
+                            .await;
                     }
                     FrontendMessage::Flush => {}
                     FrontendMessage::Terminate => {

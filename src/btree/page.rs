@@ -43,7 +43,10 @@ impl BTreePage {
     }
 
     pub fn insert_sorted(&mut self, tuple: IndexTuple) {
-        let pos = self.keys.binary_search_by(|t| t.key.as_slice().cmp(tuple.key.as_slice())).unwrap_or_else(|p| p);
+        let pos = self
+            .keys
+            .binary_search_by(|t| t.key.as_slice().cmp(tuple.key.as_slice()))
+            .unwrap_or_else(|p| p);
         self.keys.insert(pos, tuple);
     }
 

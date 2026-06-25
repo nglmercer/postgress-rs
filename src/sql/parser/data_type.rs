@@ -1,5 +1,5 @@
-use crate::sql::ast::*;
 use super::{Parser, Token};
+use crate::sql::ast::*;
 
 impl Parser {
     pub(crate) fn parse_data_type(&mut self) -> anyhow::Result<DataType> {
@@ -16,16 +16,31 @@ impl Parser {
     fn parse_data_type_base(&mut self) -> anyhow::Result<DataType> {
         match self.peek() {
             Token::Keyword(k) => match k.to_uppercase().as_str() {
-                "INT" | "INTEGER" => { self.advance(); Ok(DataType::Int) }
-                "BIGINT" => { self.advance(); Ok(DataType::BigInt) }
-                "SMALLINT" => { self.advance(); Ok(DataType::SmallInt) }
-                "FLOAT" => { self.advance(); Ok(DataType::Float) }
+                "INT" | "INTEGER" => {
+                    self.advance();
+                    Ok(DataType::Int)
+                }
+                "BIGINT" => {
+                    self.advance();
+                    Ok(DataType::BigInt)
+                }
+                "SMALLINT" => {
+                    self.advance();
+                    Ok(DataType::SmallInt)
+                }
+                "FLOAT" => {
+                    self.advance();
+                    Ok(DataType::Float)
+                }
                 "DOUBLE" => {
                     self.advance();
                     self.expect_keyword("PRECISION")?;
                     Ok(DataType::Double)
                 }
-                "REAL" => { self.advance(); Ok(DataType::Float) }
+                "REAL" => {
+                    self.advance();
+                    Ok(DataType::Float)
+                }
                 "NUMERIC" | "DECIMAL" => {
                     self.advance();
                     if matches!(self.peek(), Token::LParen) {
@@ -89,9 +104,18 @@ impl Parser {
                         Ok(DataType::Char(1))
                     }
                 }
-                "TEXT" => { self.advance(); Ok(DataType::Text) }
-                "BOOLEAN" | "BOOL" => { self.advance(); Ok(DataType::Boolean) }
-                "DATE" => { self.advance(); Ok(DataType::Date) }
+                "TEXT" => {
+                    self.advance();
+                    Ok(DataType::Text)
+                }
+                "BOOLEAN" | "BOOL" => {
+                    self.advance();
+                    Ok(DataType::Boolean)
+                }
+                "DATE" => {
+                    self.advance();
+                    Ok(DataType::Date)
+                }
                 "TIME" => {
                     self.advance();
                     if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WITH") {
@@ -103,7 +127,10 @@ impl Parser {
                         Ok(DataType::Time)
                     }
                 }
-                "TIMETZ" => { self.advance(); Ok(DataType::TimeTz) }
+                "TIMETZ" => {
+                    self.advance();
+                    Ok(DataType::TimeTz)
+                }
                 "TIMESTAMP" => {
                     self.advance();
                     if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WITH") {
@@ -115,18 +142,54 @@ impl Parser {
                         Ok(DataType::Timestamp)
                     }
                 }
-                "TIMESTAMPTZ" => { self.advance(); Ok(DataType::TimestampTz) }
-                "INTERVAL" => { self.advance(); Ok(DataType::Interval) }
-                "JSON" => { self.advance(); Ok(DataType::Json) }
-                "JSONB" => { self.advance(); Ok(DataType::JsonB) }
-                "UUID" => { self.advance(); Ok(DataType::Uuid) }
-                "SERIAL" => { self.advance(); Ok(DataType::Serial) }
-                "BIGSERIAL" => { self.advance(); Ok(DataType::BigSerial) }
-                "SMALLSERIAL" => { self.advance(); Ok(DataType::SmallSerial) }
-                "MONEY" => { self.advance(); Ok(DataType::Money) }
-                "INET" => { self.advance(); Ok(DataType::Inet) }
-                "CIDR" => { self.advance(); Ok(DataType::Cidr) }
-                "MACADDR" | "MACADDR8" => { self.advance(); Ok(DataType::MacAddr) }
+                "TIMESTAMPTZ" => {
+                    self.advance();
+                    Ok(DataType::TimestampTz)
+                }
+                "INTERVAL" => {
+                    self.advance();
+                    Ok(DataType::Interval)
+                }
+                "JSON" => {
+                    self.advance();
+                    Ok(DataType::Json)
+                }
+                "JSONB" => {
+                    self.advance();
+                    Ok(DataType::JsonB)
+                }
+                "UUID" => {
+                    self.advance();
+                    Ok(DataType::Uuid)
+                }
+                "SERIAL" => {
+                    self.advance();
+                    Ok(DataType::Serial)
+                }
+                "BIGSERIAL" => {
+                    self.advance();
+                    Ok(DataType::BigSerial)
+                }
+                "SMALLSERIAL" => {
+                    self.advance();
+                    Ok(DataType::SmallSerial)
+                }
+                "MONEY" => {
+                    self.advance();
+                    Ok(DataType::Money)
+                }
+                "INET" => {
+                    self.advance();
+                    Ok(DataType::Inet)
+                }
+                "CIDR" => {
+                    self.advance();
+                    Ok(DataType::Cidr)
+                }
+                "MACADDR" | "MACADDR8" => {
+                    self.advance();
+                    Ok(DataType::MacAddr)
+                }
                 "BIT" => {
                     self.advance();
                     if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "VARYING") {
@@ -180,8 +243,14 @@ impl Parser {
                         Ok(DataType::BitVarying(1))
                     }
                 }
-                "TSVECTOR" => { self.advance(); Ok(DataType::TsVector) }
-                "TSQUERY" => { self.advance(); Ok(DataType::TsQuery) }
+                "TSVECTOR" => {
+                    self.advance();
+                    Ok(DataType::TsVector)
+                }
+                "TSQUERY" => {
+                    self.advance();
+                    Ok(DataType::TsQuery)
+                }
                 "ARRAY" => {
                     self.advance();
                     self.expect(&Token::LBracket)?;

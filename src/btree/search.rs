@@ -1,7 +1,7 @@
-use crate::types::PageId;
-use crate::btree::page::{BTreePage, BTreePageType, IndexTuple};
 use crate::btree::insert::read_page as btree_read_page;
+use crate::btree::page::{BTreePage, BTreePageType, IndexTuple};
 use crate::storage::StorageTrait;
+use crate::types::PageId;
 use anyhow::Context;
 
 pub fn btree_search(
@@ -83,11 +83,31 @@ mod tests {
         let mut page = BTreePage::new(BTreePageType::Leaf, page_id);
         page.level = 0;
         page.keys = vec![
-            IndexTuple { key: b"apple".to_vec(),  heap_pointer: (10, 1), heap_oid: Oid(1) },
-            IndexTuple { key: b"banana".to_vec(), heap_pointer: (10, 2), heap_oid: Oid(2) },
-            IndexTuple { key: b"cherry".to_vec(), heap_pointer: (11, 1), heap_oid: Oid(3) },
-            IndexTuple { key: b"date".to_vec(),   heap_pointer: (12, 1), heap_oid: Oid(4) },
-            IndexTuple { key: b"fig".to_vec(),    heap_pointer: (13, 1), heap_oid: Oid(5) },
+            IndexTuple {
+                key: b"apple".to_vec(),
+                heap_pointer: (10, 1),
+                heap_oid: Oid(1),
+            },
+            IndexTuple {
+                key: b"banana".to_vec(),
+                heap_pointer: (10, 2),
+                heap_oid: Oid(2),
+            },
+            IndexTuple {
+                key: b"cherry".to_vec(),
+                heap_pointer: (11, 1),
+                heap_oid: Oid(3),
+            },
+            IndexTuple {
+                key: b"date".to_vec(),
+                heap_pointer: (12, 1),
+                heap_oid: Oid(4),
+            },
+            IndexTuple {
+                key: b"fig".to_vec(),
+                heap_pointer: (13, 1),
+                heap_oid: Oid(5),
+            },
         ];
 
         crate::btree::insert::write_page(&storage, page_id, &page, page_size).unwrap();
@@ -112,8 +132,7 @@ mod tests {
 
         // Build a multi-level tree by inserting enough tuples to cause splits
         let capacity = page_size / 64;
-        let mut allocator: Vec<PageId> =
-            (2u32..((capacity * 3) as u32)).map(PageId).collect();
+        let mut allocator: Vec<PageId> = (2u32..((capacity * 3) as u32)).map(PageId).collect();
         let mut next = move || allocator.pop().unwrap();
 
         let mut root = PageId(1);
@@ -128,7 +147,8 @@ mod tests {
                 },
                 page_size,
                 &mut next,
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         // Search for a key that definitely exists
@@ -159,10 +179,26 @@ mod tests {
         let mut page = BTreePage::new(BTreePageType::Leaf, page_id);
         page.level = 0;
         page.keys = vec![
-            IndexTuple { key: b"a".to_vec(), heap_pointer: (1, 0), heap_oid: Oid(1) },
-            IndexTuple { key: b"b".to_vec(), heap_pointer: (2, 0), heap_oid: Oid(2) },
-            IndexTuple { key: b"b".to_vec(), heap_pointer: (3, 0), heap_oid: Oid(3) },
-            IndexTuple { key: b"c".to_vec(), heap_pointer: (4, 0), heap_oid: Oid(4) },
+            IndexTuple {
+                key: b"a".to_vec(),
+                heap_pointer: (1, 0),
+                heap_oid: Oid(1),
+            },
+            IndexTuple {
+                key: b"b".to_vec(),
+                heap_pointer: (2, 0),
+                heap_oid: Oid(2),
+            },
+            IndexTuple {
+                key: b"b".to_vec(),
+                heap_pointer: (3, 0),
+                heap_oid: Oid(3),
+            },
+            IndexTuple {
+                key: b"c".to_vec(),
+                heap_pointer: (4, 0),
+                heap_oid: Oid(4),
+            },
         ];
         crate::btree::insert::write_page(&storage, page_id, &page, 4096).unwrap();
 

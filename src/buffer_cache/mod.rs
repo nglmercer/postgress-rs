@@ -1,8 +1,8 @@
-use crate::types::PageId;
 use crate::storage::StorageTrait;
+use crate::types::PageId;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 pub struct SeqScanRing {
     pages: Vec<Option<(PageId, Vec<u8>)>>,
@@ -23,7 +23,11 @@ impl SeqScanRing {
         }
     }
 
-    pub fn next_page(&mut self, storage: &dyn StorageTrait, page_id: PageId) -> anyhow::Result<Vec<u8>> {
+    pub fn next_page(
+        &mut self,
+        storage: &dyn StorageTrait,
+        page_id: PageId,
+    ) -> anyhow::Result<Vec<u8>> {
         let slot = self.head % self.capacity;
 
         if let Some((cached_id, ref cached_data)) = self.pages[slot] {
@@ -87,11 +91,7 @@ impl BufferPool {
         }
     }
 
-    pub fn fetch_page(
-        &self,
-        storage: &dyn StorageTrait,
-        page_id: PageId,
-    ) -> anyhow::Result<usize> {
+    pub fn fetch_page(&self, storage: &dyn StorageTrait, page_id: PageId) -> anyhow::Result<usize> {
         let map = self.page_map.lock();
         if let Some(&idx) = map.get(&page_id) {
             drop(map);
@@ -199,9 +199,15 @@ impl BufferPool {
 
     pub fn inspect(&self) -> Vec<String> {
         let buffers = self.buffers.lock();
-        buffers.iter()
+        buffers
+            .iter()
             .filter(|b| b.pin_count > 0 || b.usage_count > 0)
-            .map(|b| format!("Page({}) usage={} pin={} dirty={}", b.page_id.0, b.usage_count, b.pin_count, b.is_dirty))
+            .map(|b| {
+                format!(
+                    "Page({}) usage={} pin={} dirty={}",
+                    b.page_id.0, b.usage_count, b.pin_count, b.is_dirty
+                )
+            })
             .collect()
     }
 
@@ -235,7 +241,9 @@ pub struct MutableRelationState {
 pub struct SharedBufferCache {
     pub(crate) storage: Arc<dyn StorageTrait>,
     pool: BufferPool,
-    rels: parking_lot::RwLock<std::collections::HashMap<crate::types::Oid, Arc<Mutex<MutableRelationState>>>>,
+    rels: parking_lot::RwLock<
+        std::collections::HashMap<crate::types::Oid, Arc<Mutex<MutableRelationState>>>,
+    >,
 }
 
 impl SharedBufferCache {
@@ -251,7 +259,10 @@ impl SharedBufferCache {
         &self.pool
     }
 
-    pub fn get_relation_state(&self, rel_oid: crate::types::Oid) -> Option<Arc<Mutex<MutableRelationState>>> {
+    pub fn get_relation_state(
+        &self,
+        rel_oid: crate::types::Oid,
+    ) -> Option<Arc<Mutex<MutableRelationState>>> {
         let rels = self.rels.read();
         rels.get(&rel_oid).cloned()
     }
@@ -283,7 +294,10 @@ impl SharedBufferCache {
         rels.remove(&rel_oid);
     }
 
-    pub fn fetch_page(&self, page_id: crate::types::PageId) -> anyhow::Result<std::sync::Arc<parking_lot::Mutex<Buffer>>> {
+    pub fn fetch_page(
+        &self,
+        page_id: crate::types::PageId,
+    ) -> anyhow::Result<std::sync::Arc<parking_lot::Mutex<Buffer>>> {
         let idx = self.pool.fetch_page(&*self.storage, page_id)?;
         let buffers = self.pool.buffers.lock();
         let buffer = &buffers[idx];
@@ -318,7 +332,10 @@ impl SharedBufferCache {
         let mut flushed = 0u64;
         for (page_id, _) in &map {
             let buffers = self.pool.buffers.lock();
-            let dirty = map.get(page_id).map(|&idx| buffers[idx].is_dirty).unwrap_or(false);
+            let dirty = map
+                .get(page_id)
+                .map(|&idx| buffers[idx].is_dirty)
+                .unwrap_or(false);
             drop(buffers);
             if dirty {
                 self.pool.flush_page(&*self.storage, *page_id)?;
@@ -396,7 +413,11 @@ impl BgWriter {
                     Ok(n) => {
                         *bgwriter.bytes_written.lock() += n as usize * 8192;
                         if n > 0 {
-                            tracing::debug!("[bgwriter] flushed {} dirty pages (target={})", n, target);
+                            tracing::debug!(
+                                "[bgwriter] flushed {} dirty pages (target={})",
+                                n,
+                                target
+                            );
                         }
                     }
                     Err(e) => {
@@ -439,7 +460,9 @@ impl CheckpointState {
 
 impl Default for CheckpointState {
     fn default() -> Self {
-        Self { redo_lsn: std::sync::atomic::AtomicU64::new(0) }
+        Self {
+            redo_lsn: std::sync::atomic::AtomicU64::new(0),
+        }
     }
 }
 
@@ -458,7 +481,11 @@ impl Checkpointer {
     ) -> (Self, Arc<CheckpointState>) {
         let state = CheckpointState::new();
         (
-            Self { cache, wal, state: Arc::clone(&state) },
+            Self {
+                cache,
+                wal,
+                state: Arc::clone(&state),
+            },
             state,
         )
     }
@@ -476,7 +503,9 @@ impl Checkpointer {
 
         // Phase 3: record new redo LSN
         let lsn = self.wal.get_flushed_lsn().await;
-        self.state.redo_lsn.store(lsn, std::sync::atomic::Ordering::Release);
+        self.state
+            .redo_lsn
+            .store(lsn, std::sync::atomic::Ordering::Release);
 
         tracing::info!(
             "[checkpoint] flushed {} pages, redo_lsn={}",
@@ -669,7 +698,10 @@ mod tests {
         let wal = Arc::new(WAL::new(65536));
 
         // Write a WAL record to advance the LSN
-        let lsn = wal.append(&crate::wal::WALRecord::Begin { xid: 1 }).await.unwrap();
+        let lsn = wal
+            .append(&crate::wal::WALRecord::Begin { xid: 1 })
+            .await
+            .unwrap();
 
         let cache = make_cache();
         // Dirty up a page

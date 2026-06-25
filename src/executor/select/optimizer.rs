@@ -1,7 +1,7 @@
+use crate::catalog::statistics::StatisticsCollector;
+use crate::executor::select::Row;
 use crate::sql::ast::*;
 use crate::types::*;
-use crate::executor::select::Row;
-use crate::catalog::statistics::StatisticsCollector;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -70,8 +70,15 @@ impl CostOptimizer {
         }
     }
 
-    pub fn estimate_seq_scan(&self, table_name: &str, table_oid: Oid, _selectivity: f64) -> CostEstimate {
-        let rows = self.stats.get_table_stats(table_oid)
+    pub fn estimate_seq_scan(
+        &self,
+        table_name: &str,
+        table_oid: Oid,
+        _selectivity: f64,
+    ) -> CostEstimate {
+        let rows = self
+            .stats
+            .get_table_stats(table_oid)
             .map(|s| s.row_count as f64)
             .unwrap_or(1000.0);
 
@@ -93,7 +100,9 @@ impl CostOptimizer {
         index_oid: Oid,
         selectivity: f64,
     ) -> CostEstimate {
-        let total_rows = self.stats.get_table_stats(table_oid)
+        let total_rows = self
+            .stats
+            .get_table_stats(table_oid)
             .map(|s| s.row_count as f64)
             .unwrap_or(1000.0);
 
@@ -169,8 +178,11 @@ impl CostOptimizer {
         let sort_cost_right = right_rows * right_rows.ln() * 0.01;
         let merge_cost = (left_rows + right_rows) * 0.001;
 
-        let total_cost = left_cost.total_cost + right_cost.total_cost
-            + sort_cost_left + sort_cost_right + merge_cost;
+        let total_cost = left_cost.total_cost
+            + right_cost.total_cost
+            + sort_cost_left
+            + sort_cost_right
+            + merge_cost;
         let estimated_rows = (left_rows + right_rows) / 2.0 * _selectivity;
 
         CostEstimate {
@@ -191,31 +203,62 @@ impl CostOptimizer {
         let hash_join = self.estimate_hash_join(left_cost, right_cost, selectivity);
         let merge_join = self.estimate_merge_join(left_cost, right_cost, selectivity);
 
-        if hash_join.total_cost <= nested_loop.total_cost && hash_join.total_cost <= merge_join.total_cost {
-            (PlanNodeType::HashJoin { join_type: JoinType::Inner, condition: None }, hash_join)
+        if hash_join.total_cost <= nested_loop.total_cost
+            && hash_join.total_cost <= merge_join.total_cost
+        {
+            (
+                PlanNodeType::HashJoin {
+                    join_type: JoinType::Inner,
+                    condition: None,
+                },
+                hash_join,
+            )
         } else if merge_join.total_cost <= nested_loop.total_cost {
-            (PlanNodeType::MergeJoin { join_type: JoinType::Inner, condition: None }, merge_join)
+            (
+                PlanNodeType::MergeJoin {
+                    join_type: JoinType::Inner,
+                    condition: None,
+                },
+                merge_join,
+            )
         } else {
-            (PlanNodeType::NestedLoopJoin { join_type: JoinType::Inner, condition: None }, nested_loop)
+            (
+                PlanNodeType::NestedLoopJoin {
+                    join_type: JoinType::Inner,
+                    condition: None,
+                },
+                nested_loop,
+            )
         }
     }
 
-    pub fn optimize_join_order(&self, tables: &[(String, Oid, CostEstimate)]) -> Vec<(String, Oid, CostEstimate)> {
+    pub fn optimize_join_order(
+        &self,
+        tables: &[(String, Oid, CostEstimate)],
+    ) -> Vec<(String, Oid, CostEstimate)> {
         if tables.len() <= 1 {
             return tables.to_vec();
         }
 
         let mut sorted = tables.to_vec();
         sorted.sort_by(|a, b| {
-            a.2.estimated_rows.partial_cmp(&b.2.estimated_rows)
+            a.2.estimated_rows
+                .partial_cmp(&b.2.estimated_rows)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         sorted
     }
 
-    pub fn estimate_selectivity(&self, table_oid: Oid, column_name: &str, op: &str, value: &str) -> f64 {
-        self.stats.estimate_selectivity(table_oid, column_name, op, value)
+    pub fn estimate_selectivity(
+        &self,
+        table_oid: Oid,
+        column_name: &str,
+        op: &str,
+        value: &str,
+    ) -> f64 {
+        self.stats
+            .estimate_selectivity(table_oid, column_name, op, value)
     }
 }
 
@@ -281,7 +324,9 @@ mod tests {
         let (algo, cost) = optimizer.choose_join_algorithm(&left_cost, &right_cost, 0.1);
         assert!(cost.total_cost > 0.0);
         match algo {
-            PlanNodeType::HashJoin { .. } | PlanNodeType::MergeJoin { .. } | PlanNodeType::NestedLoopJoin { .. } => {}
+            PlanNodeType::HashJoin { .. }
+            | PlanNodeType::MergeJoin { .. }
+            | PlanNodeType::NestedLoopJoin { .. } => {}
             _ => panic!("Unexpected join algorithm"),
         }
     }
@@ -292,18 +337,26 @@ mod tests {
         let optimizer = CostOptimizer::new(stats);
 
         let tables = vec![
-            ("large".to_string(), Oid(1), CostEstimate {
-                startup_cost: 0.0,
-                total_cost: 1000.0,
-                estimated_rows: 10000.0,
-                width: 100,
-            }),
-            ("small".to_string(), Oid(2), CostEstimate {
-                startup_cost: 0.0,
-                total_cost: 10.0,
-                estimated_rows: 100.0,
-                width: 50,
-            }),
+            (
+                "large".to_string(),
+                Oid(1),
+                CostEstimate {
+                    startup_cost: 0.0,
+                    total_cost: 1000.0,
+                    estimated_rows: 10000.0,
+                    width: 100,
+                },
+            ),
+            (
+                "small".to_string(),
+                Oid(2),
+                CostEstimate {
+                    startup_cost: 0.0,
+                    total_cost: 10.0,
+                    estimated_rows: 100.0,
+                    width: 50,
+                },
+            ),
         ];
 
         let optimized = optimizer.optimize_join_order(&tables);

@@ -1,6 +1,6 @@
-use crate::types::{PageId, Oid};
 use crate::btree::page::{BTreePage, BTreePageType, IndexTuple};
 use crate::storage::StorageTrait;
+use crate::types::{Oid, PageId};
 
 pub fn serialize_page(page: &BTreePage, page_size: usize) -> Vec<u8> {
     let mut data = vec![0u8; page_size];
@@ -79,8 +79,16 @@ pub fn deserialize_page(page_id: PageId, data: &[u8]) -> anyhow::Result<BTreePag
     let left_sibling_val = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
     let right_sibling_val = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
 
-    let left_sibling = if left_sibling_val == 0 { None } else { Some(PageId(left_sibling_val)) };
-    let right_sibling = if right_sibling_val == 0 { None } else { Some(PageId(right_sibling_val)) };
+    let left_sibling = if left_sibling_val == 0 {
+        None
+    } else {
+        Some(PageId(left_sibling_val))
+    };
+    let right_sibling = if right_sibling_val == 0 {
+        None
+    } else {
+        Some(PageId(right_sibling_val))
+    };
 
     let mut keys = Vec::new();
     let mut pos = 64;
@@ -90,7 +98,8 @@ pub fn deserialize_page(page_id: PageId, data: &[u8]) -> anyhow::Result<BTreePag
             break;
         }
 
-        let key_len = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
+        let key_len =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]) as usize;
         if key_len == 0 || pos + 4 + key_len + 6 > data.len() {
             break;
         }
@@ -99,7 +108,8 @@ pub fn deserialize_page(page_id: PageId, data: &[u8]) -> anyhow::Result<BTreePag
         let key = data[pos..pos + key_len].to_vec();
         pos += key_len;
 
-        let heap_page = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+        let heap_page =
+            u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
         pos += 4;
         let heap_offset = u16::from_le_bytes([data[pos], data[pos + 1]]);
         pos += 2;
@@ -163,14 +173,7 @@ pub fn btree_insert_multipage(
     page_size: usize,
     next_page_id: &mut dyn FnMut() -> PageId,
 ) -> anyhow::Result<PageId> {
-    let result = insert_recursive(
-        storage,
-        root_page,
-        &tuple,
-        page_size,
-        next_page_id,
-        true,
-    )?;
+    let result = insert_recursive(storage, root_page, &tuple, page_size, next_page_id, true)?;
 
     match result {
         Some(new_root_page_id) => Ok(new_root_page_id),
@@ -198,20 +201,19 @@ fn insert_recursive(
             right.page_id = (next_page_id)();
             right.level = page.level;
 
-            let push_up_key: Option<IndexTuple> =
-                if tuple.key.as_slice()
-                    < right
-                        .keys
-                        .first()
-                        .map(|k| k.key.as_slice())
-                        .unwrap_or_default()
-                {
-                    page.insert_sorted(tuple.clone());
-                    right.keys.first().cloned()
-                } else {
-                    right.insert_sorted(tuple.clone());
-                    Some(right.keys[0].clone())
-                };
+            let push_up_key: Option<IndexTuple> = if tuple.key.as_slice()
+                < right
+                    .keys
+                    .first()
+                    .map(|k| k.key.as_slice())
+                    .unwrap_or_default()
+            {
+                page.insert_sorted(tuple.clone());
+                right.keys.first().cloned()
+            } else {
+                right.insert_sorted(tuple.clone());
+                Some(right.keys[0].clone())
+            };
 
             right.left_sibling = Some(page.page_id);
 
@@ -256,7 +258,14 @@ fn insert_recursive(
     } else {
         let child_page_id = find_child_page_id(&page, &tuple.key);
 
-        match insert_recursive(storage, child_page_id, tuple, page_size, next_page_id, false)? {
+        match insert_recursive(
+            storage,
+            child_page_id,
+            tuple,
+            page_size,
+            next_page_id,
+            false,
+        )? {
             None => Ok(None),
             Some(new_child_id) => {
                 let mut updated = read_page(storage, page_id, page_size)?;
@@ -426,10 +435,7 @@ mod tests {
             page_type: BTreePageType::Internal,
             page_id: PageId(5),
             level: 1,
-            keys: vec![
-                make_tuple(b"x", 10, 0),
-                make_tuple(b"y", 20, 0),
-            ],
+            keys: vec![make_tuple(b"x", 10, 0), make_tuple(b"y", 20, 0)],
             left_sibling: None,
             right_sibling: None,
         };
@@ -448,7 +454,7 @@ mod tests {
         btree_insert(&storage, root, make_tuple(b"a", 10, 0), 8192).unwrap();
         btree_insert(&storage, root, make_tuple(b"c", 30, 0), 8192).unwrap();
         btree_insert(&storage, root, make_tuple(b"b", 20, 0), 8192).unwrap();
-        
+
         let page = read_page(&storage, root, 8192).unwrap();
         assert_eq!(page.keys.len(), 3);
         assert_eq!(page.keys[0].key, b"a");
@@ -465,9 +471,7 @@ mod tests {
 
         for i in 0u32..10 {
             let key = i.to_le_bytes().to_vec();
-            let _ = btree_insert_multipage(
-                &storage, root, make_tuple(&key, i, 0), 8192, &mut next,
-            );
+            let _ = btree_insert_multipage(&storage, root, make_tuple(&key, i, 0), 8192, &mut next);
         }
 
         // Verify we can find a key

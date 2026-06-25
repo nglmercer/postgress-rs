@@ -1,5 +1,5 @@
-use crate::types::Oid;
 use crate::sql::ast::Expr;
+use crate::types::Oid;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PolicyCommand {
@@ -88,13 +88,15 @@ impl RlsFilter {
     }
 
     pub fn get_using_expressions(&self) -> Vec<&Expr> {
-        self.policies.iter()
+        self.policies
+            .iter()
             .filter_map(|p| p.using_expr.as_ref())
             .collect()
     }
 
     pub fn get_check_expressions(&self) -> Vec<&Expr> {
-        self.policies.iter()
+        self.policies
+            .iter()
             .filter_map(|p| p.check_expr.as_ref())
             .collect()
     }
@@ -123,7 +125,7 @@ impl RlsFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::ast::{Expr, BinaryOperator};
+    use crate::sql::ast::{BinaryOperator, Expr};
 
     #[test]
     fn test_policy_new() {

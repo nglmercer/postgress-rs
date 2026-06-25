@@ -1,15 +1,15 @@
-pub mod context;
-pub mod joins;
-pub mod group_by;
-pub mod window;
-pub mod set_ops;
-pub mod filter_limit;
 pub mod algorithms;
+pub mod context;
+pub mod filter_limit;
+pub mod group_by;
+pub mod joins;
 pub mod materialize;
 pub mod optimizer;
+pub mod set_ops;
+pub mod window;
 
-use crate::sql::ast::*;
 use crate::buffer_cache::SharedBufferCache;
+use crate::sql::ast::*;
 
 pub type Row = Vec<String>;
 
@@ -97,13 +97,25 @@ pub async fn execute_select_with_snapshot(
 
     // Handle set operations (UNION, INTERSECT, EXCEPT)
     if !select.set_operations.is_empty() {
-        let mut result = SelectResult { columns, rows: result_rows };
+        let mut result = SelectResult {
+            columns,
+            rows: result_rows,
+        };
         for set_op in &select.set_operations {
-                let right_result = Box::pin(execute_select_with_snapshot(&set_op.select, cache, catalog, ctx.snapshot.clone())).await?;
+            let right_result = Box::pin(execute_select_with_snapshot(
+                &set_op.select,
+                cache,
+                catalog,
+                ctx.snapshot.clone(),
+            ))
+            .await?;
             result = ctx.apply_set_operation(result, right_result, &set_op.operator)?;
         }
         return Ok(result);
     }
 
-    Ok(SelectResult { columns, rows: result_rows })
+    Ok(SelectResult {
+        columns,
+        rows: result_rows,
+    })
 }

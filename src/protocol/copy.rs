@@ -1,9 +1,9 @@
-use crate::types::Oid;
 use crate::buffer_cache::SharedBufferCache;
 use crate::catalog::Catalog;
 use crate::executor::heap::{tuple_insert, TupleInsert};
-use crate::wal::WAL;
 use crate::transaction::TransactionManager;
+use crate::types::Oid;
+use crate::wal::WAL;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -36,7 +36,8 @@ pub async fn handle_copy_in(
 ) -> anyhow::Result<u64> {
     let mut rows_copied = 0u64;
 
-    let rel_state = cache.get_relation_state(state.rel_oid)
+    let rel_state = cache
+        .get_relation_state(state.rel_oid)
         .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
     let tuple_desc = {
         let rel = rel_state.lock();
@@ -108,17 +109,12 @@ pub fn parse_copy_statement(sql: &str) -> anyhow::Result<CopyState> {
 
 pub fn parse_copy_data(data: &str, format: &CopyFormat) -> Vec<String> {
     match format {
-        CopyFormat::Text => {
-            data.lines()
-                .flat_map(|line| line.split('\t').map(|s| s.to_string()))
-                .collect()
-        }
-        CopyFormat::Csv => {
-            csv_split(data)
-        }
-        CopyFormat::Binary => {
-            data.split('\t').map(|s| s.to_string()).collect()
-        }
+        CopyFormat::Text => data
+            .lines()
+            .flat_map(|line| line.split('\t').map(|s| s.to_string()))
+            .collect(),
+        CopyFormat::Csv => csv_split(data),
+        CopyFormat::Binary => data.split('\t').map(|s| s.to_string()).collect(),
     }
 }
 

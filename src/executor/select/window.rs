@@ -1,13 +1,27 @@
-use crate::sql::ast::*;
-use crate::executor::select::Row;
 use super::context::ExecContext;
+use crate::executor::select::Row;
+use crate::sql::ast::*;
 
 impl<'a> ExecContext<'a> {
-    pub fn apply_window_functions(&self, rows: &mut Vec<Row>, select_list: &[SelectItem]) -> anyhow::Result<()> {
+    pub fn apply_window_functions(
+        &self,
+        rows: &mut Vec<Row>,
+        select_list: &[SelectItem],
+    ) -> anyhow::Result<()> {
         for (i, item) in select_list.iter().enumerate() {
-            if let SelectItem::Expr(Expr::Function(f)) | SelectItem::ExprAs { expr: Expr::Function(f), .. } = item {
+            if let SelectItem::Expr(Expr::Function(f))
+            | SelectItem::ExprAs {
+                expr: Expr::Function(f),
+                ..
+            } = item
+            {
                 if let Some(ref over) = f.over {
-                    let name = f.name.parts.last().map(|s| s.to_uppercase()).unwrap_or_default();
+                    let name = f
+                        .name
+                        .parts
+                        .last()
+                        .map(|s| s.to_uppercase())
+                        .unwrap_or_default();
                     self.compute_window_function(rows, i, &name, f, over)?;
                 }
             }
@@ -15,11 +29,7 @@ impl<'a> ExecContext<'a> {
         Ok(())
     }
 
-    fn rows_equal_on_order_by(
-        a: &Row,
-        b: &Row,
-        order_by: &[OrderByItem],
-    ) -> bool {
+    fn rows_equal_on_order_by(a: &Row, b: &Row, order_by: &[OrderByItem]) -> bool {
         for item in order_by {
             let a_val = crate::server::evaluate_expr(&item.expr, a, None).unwrap_or_default();
             let b_val = crate::server::evaluate_expr(&item.expr, b, None).unwrap_or_default();
@@ -42,16 +52,24 @@ impl<'a> ExecContext<'a> {
             // Simple aggregate-like window
             let val = match func_name {
                 "ROW_NUMBER" => (1..=rows.len()).map(|i| i.to_string()).collect::<Vec<_>>(),
-                "RANK" | "DENSE_RANK" => (1..=rows.len()).map(|i| i.to_string()).collect::<Vec<_>>(),
+                "RANK" | "DENSE_RANK" => {
+                    (1..=rows.len()).map(|i| i.to_string()).collect::<Vec<_>>()
+                }
                 "NTILE" => {
-                    let n = func.args.first()
+                    let n = func
+                        .args
+                        .first()
                         .and_then(|a| match a {
-                            FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                            FunctionArg::Expr(e) => {
+                                crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                            }
                             _ => None,
                         })
                         .and_then(|v| v.parse::<usize>().ok())
                         .unwrap_or(1);
-                    (0..rows.len()).map(|i| ((i * n / rows.len()) + 1).to_string()).collect()
+                    (0..rows.len())
+                        .map(|i| ((i * n / rows.len()) + 1).to_string())
+                        .collect()
                 }
                 _ => return Ok(()),
             };
@@ -72,34 +90,62 @@ impl<'a> ExecContext<'a> {
         if !over.order_by.is_empty() {
             indexed_rows.sort_by(|a, b| {
                 for item in &over.order_by {
-                    let a_val = crate::server::evaluate_expr(&item.expr, &a.1, self.tuple_desc.as_ref()).unwrap_or_default();
-                    let b_val = crate::server::evaluate_expr(&item.expr, &b.1, self.tuple_desc.as_ref()).unwrap_or_default();
+                    let a_val =
+                        crate::server::evaluate_expr(&item.expr, &a.1, self.tuple_desc.as_ref())
+                            .unwrap_or_default();
+                    let b_val =
+                        crate::server::evaluate_expr(&item.expr, &b.1, self.tuple_desc.as_ref())
+                            .unwrap_or_default();
                     let nulls_first = matches!(item.nulls, NullsOrder::First);
                     let a_null = a_val.is_empty() || a_val.eq_ignore_ascii_case("NULL");
                     let b_null = b_val.is_empty() || b_val.eq_ignore_ascii_case("NULL");
-                    if a_null && b_null { continue; }
-                    if a_null { return if nulls_first { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }; }
-                    if b_null { return if nulls_first { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less }; }
-                    let cmp = a_val.partial_cmp(&b_val).unwrap_or(std::cmp::Ordering::Equal);
+                    if a_null && b_null {
+                        continue;
+                    }
+                    if a_null {
+                        return if nulls_first {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Greater
+                        };
+                    }
+                    if b_null {
+                        return if nulls_first {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            std::cmp::Ordering::Less
+                        };
+                    }
+                    let cmp = a_val
+                        .partial_cmp(&b_val)
+                        .unwrap_or(std::cmp::Ordering::Equal);
                     let cmp = match item.direction {
                         SortDirection::Desc | SortDirection::Default => cmp.reverse(),
                         SortDirection::Asc => cmp,
                     };
-                    if cmp != std::cmp::Ordering::Equal { return cmp; }
+                    if cmp != std::cmp::Ordering::Equal {
+                        return cmp;
+                    }
                 }
                 std::cmp::Ordering::Equal
             });
         }
 
         let window_vals: Vec<String> = match func_name {
-            "ROW_NUMBER" => (0..indexed_rows.len()).map(|i| (i + 1).to_string()).collect(),
+            "ROW_NUMBER" => (0..indexed_rows.len())
+                .map(|i| (i + 1).to_string())
+                .collect(),
             "RANK" => {
                 let mut vals = Vec::new();
                 let mut i = 0;
                 while i < indexed_rows.len() {
                     let mut j = i + 1;
                     while j < indexed_rows.len() {
-                        if !Self::rows_equal_on_order_by(&indexed_rows[i].1, &indexed_rows[j].1, &over.order_by) {
+                        if !Self::rows_equal_on_order_by(
+                            &indexed_rows[i].1,
+                            &indexed_rows[j].1,
+                            &over.order_by,
+                        ) {
                             break;
                         }
                         j += 1;
@@ -119,7 +165,11 @@ impl<'a> ExecContext<'a> {
                 while i < indexed_rows.len() {
                     let mut j = i + 1;
                     while j < indexed_rows.len() {
-                        if !Self::rows_equal_on_order_by(&indexed_rows[i].1, &indexed_rows[j].1, &over.order_by) {
+                        if !Self::rows_equal_on_order_by(
+                            &indexed_rows[i].1,
+                            &indexed_rows[j].1,
+                            &over.order_by,
+                        ) {
                             break;
                         }
                         j += 1;
@@ -133,33 +183,53 @@ impl<'a> ExecContext<'a> {
                 vals
             }
             "NTILE" => {
-                let n = func.args.first()
+                let n = func
+                    .args
+                    .first()
                     .and_then(|a| match a {
-                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        FunctionArg::Expr(e) => {
+                            crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                        }
                         _ => None,
                     })
                     .and_then(|v| v.parse::<usize>().ok())
                     .unwrap_or(1);
-                (0..indexed_rows.len()).map(|i| ((i * n / indexed_rows.len()) + 1).to_string()).collect()
+                (0..indexed_rows.len())
+                    .map(|i| ((i * n / indexed_rows.len()) + 1).to_string())
+                    .collect()
             }
             "LAG" => {
                 let mut vals = Vec::new();
-                let default = func.args.get(2)
+                let default = func
+                    .args
+                    .get(2)
                     .and_then(|a| match a {
-                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        FunctionArg::Expr(e) => {
+                            crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                        }
                         _ => None,
                     })
                     .unwrap_or_default();
-                let offset = func.args.get(1)
+                let offset = func
+                    .args
+                    .get(1)
                     .and_then(|a| match a {
-                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        FunctionArg::Expr(e) => {
+                            crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                        }
                         _ => None,
                     })
                     .and_then(|v| v.parse::<usize>().ok())
                     .unwrap_or(1);
                 for i in 0..indexed_rows.len() {
                     if i >= offset {
-                        vals.push(indexed_rows[i - offset].1.get(col_idx).cloned().unwrap_or_default());
+                        vals.push(
+                            indexed_rows[i - offset]
+                                .1
+                                .get(col_idx)
+                                .cloned()
+                                .unwrap_or_default(),
+                        );
                     } else {
                         vals.push(default.clone());
                     }
@@ -168,22 +238,36 @@ impl<'a> ExecContext<'a> {
             }
             "LEAD" => {
                 let mut vals = Vec::new();
-                let default = func.args.get(2)
+                let default = func
+                    .args
+                    .get(2)
                     .and_then(|a| match a {
-                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        FunctionArg::Expr(e) => {
+                            crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                        }
                         _ => None,
                     })
                     .unwrap_or_default();
-                let offset = func.args.get(1)
+                let offset = func
+                    .args
+                    .get(1)
                     .and_then(|a| match a {
-                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        FunctionArg::Expr(e) => {
+                            crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                        }
                         _ => None,
                     })
                     .and_then(|v| v.parse::<usize>().ok())
                     .unwrap_or(1);
                 for i in 0..indexed_rows.len() {
                     if i + offset < indexed_rows.len() {
-                        vals.push(indexed_rows[i + offset].1.get(col_idx).cloned().unwrap_or_default());
+                        vals.push(
+                            indexed_rows[i + offset]
+                                .1
+                                .get(col_idx)
+                                .cloned()
+                                .unwrap_or_default(),
+                        );
                     } else {
                         vals.push(default.clone());
                     }
@@ -203,7 +287,13 @@ impl<'a> ExecContext<'a> {
             "LAST_VALUE" => {
                 let mut vals = Vec::new();
                 if !indexed_rows.is_empty() {
-                    let last_val = indexed_rows.last().unwrap().1.get(col_idx).cloned().unwrap_or_default();
+                    let last_val = indexed_rows
+                        .last()
+                        .unwrap()
+                        .1
+                        .get(col_idx)
+                        .cloned()
+                        .unwrap_or_default();
                     for _ in 0..indexed_rows.len() {
                         vals.push(last_val.clone());
                     }
@@ -211,16 +301,24 @@ impl<'a> ExecContext<'a> {
                 vals
             }
             "NTH_VALUE" => {
-                let n = func.args.get(1)
+                let n = func
+                    .args
+                    .get(1)
                     .and_then(|a| match a {
-                        FunctionArg::Expr(e) => crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref()),
+                        FunctionArg::Expr(e) => {
+                            crate::server::evaluate_expr(e, &[], self.tuple_desc.as_ref())
+                        }
                         _ => None,
                     })
                     .and_then(|v| v.parse::<usize>().ok())
                     .unwrap_or(1);
                 let mut vals = Vec::new();
                 let nth_val = if n > 0 && n <= indexed_rows.len() {
-                    indexed_rows[n - 1].1.get(col_idx).cloned().unwrap_or_default()
+                    indexed_rows[n - 1]
+                        .1
+                        .get(col_idx)
+                        .cloned()
+                        .unwrap_or_default()
                 } else {
                     String::new()
                 };

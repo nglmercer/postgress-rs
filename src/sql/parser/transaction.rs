@@ -1,5 +1,5 @@
-use crate::sql::ast::*;
 use super::{Parser, Token};
+use crate::sql::ast::*;
 
 impl Parser {
     pub(crate) fn parse_begin(&mut self) -> anyhow::Result<BeginStatement> {

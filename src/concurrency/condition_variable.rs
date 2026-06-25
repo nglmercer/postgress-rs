@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use tokio::sync::Notify;
 
 use super::Latch;

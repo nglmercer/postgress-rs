@@ -74,7 +74,10 @@ impl AutovacuumDaemon {
     }
 
     pub fn update_stats(&mut self, rel_oid: Oid, n_live: u64, n_dead: u64) {
-        let stats = self.table_stats.entry(rel_oid).or_insert_with(|| TableVacuumStats::new(rel_oid));
+        let stats = self
+            .table_stats
+            .entry(rel_oid)
+            .or_insert_with(|| TableVacuumStats::new(rel_oid));
         stats.n_live_tup = n_live;
         stats.n_dead_tup = n_dead;
     }
@@ -95,13 +98,17 @@ impl AutovacuumDaemon {
         let stats = self.table_stats.get(&rel_oid);
         let should_vacuum = stats.map_or(false, |s| {
             let dominated = s.dead_ratio() > self.config.vacuum_threshold;
-            let timed_out = s.last_vacuum.map_or(true, |t| t.elapsed() > self.config.naptime);
+            let timed_out = s
+                .last_vacuum
+                .map_or(true, |t| t.elapsed() > self.config.naptime);
             dominated && timed_out
         });
 
         let should_analyze = stats.map_or(false, |s| {
             let dominated = s.dead_ratio() > self.config.analyze_threshold;
-            let timed_out = s.last_analyze.map_or(true, |t| t.elapsed() > self.config.naptime);
+            let timed_out = s
+                .last_analyze
+                .map_or(true, |t| t.elapsed() > self.config.naptime);
             dominated && timed_out
         });
 
@@ -115,7 +122,8 @@ impl AutovacuumDaemon {
     }
 
     pub fn tables_needing_vacuum(&self) -> Vec<Oid> {
-        self.table_stats.keys()
+        self.table_stats
+            .keys()
             .filter(|&&oid| self.compute_vacuum_decision(oid).should_vacuum)
             .cloned()
             .collect()

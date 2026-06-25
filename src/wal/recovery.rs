@@ -1,8 +1,8 @@
-use crate::types::{Oid, PageId};
 use crate::storage::StorageTrait;
+use crate::types::{Oid, PageId};
 use crate::wal::{ControlFile, WALRecord};
-use std::sync::Arc;
 use std::path::Path;
+use std::sync::Arc;
 
 pub struct WalRecovery {
     control: ControlFile,

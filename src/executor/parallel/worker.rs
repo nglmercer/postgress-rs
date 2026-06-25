@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use super::ParallelContext;
+use std::sync::Arc;
 
 pub struct ParallelExecutor {
     n_workers: u32,
@@ -14,10 +14,7 @@ impl ParallelExecutor {
         }
     }
 
-    pub async fn execute_parallel<F>(
-        &self,
-        task: F,
-    ) -> anyhow::Result<Vec<Vec<String>>>
+    pub async fn execute_parallel<F>(&self, task: F) -> anyhow::Result<Vec<Vec<String>>>
     where
         F: Fn(u32, Arc<ParallelContext>) -> Vec<Vec<String>> + Send + Sync + Clone + 'static,
     {
@@ -39,7 +36,10 @@ impl ParallelExecutor {
 
         if self.context.has_error() {
             let state = self.context.shared_state.lock();
-            return Err(anyhow::anyhow!("Parallel execution failed: {}", state.error.as_ref().unwrap()));
+            return Err(anyhow::anyhow!(
+                "Parallel execution failed: {}",
+                state.error.as_ref().unwrap()
+            ));
         }
 
         Ok(self.context.get_tuples())
@@ -57,9 +57,10 @@ mod tests {
     #[tokio::test]
     async fn test_parallel_executor_basic() {
         let executor = ParallelExecutor::new(4);
-        let result = executor.execute_parallel(|worker_id, _ctx| {
-            vec![vec![format!("worker_{}", worker_id)]]
-        }).await.unwrap();
+        let result = executor
+            .execute_parallel(|worker_id, _ctx| vec![vec![format!("worker_{}", worker_id)]])
+            .await
+            .unwrap();
 
         assert_eq!(result.len(), 4);
     }
@@ -67,9 +68,10 @@ mod tests {
     #[tokio::test]
     async fn test_parallel_executor_empty() {
         let executor = ParallelExecutor::new(2);
-        let result = executor.execute_parallel(|_worker_id, _ctx| {
-            vec![]
-        }).await.unwrap();
+        let result = executor
+            .execute_parallel(|_worker_id, _ctx| vec![])
+            .await
+            .unwrap();
 
         assert!(result.is_empty());
     }

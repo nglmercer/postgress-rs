@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use crate::sql::ast::*;
-    use crate::executor::select::execute_select;
-    use crate::storage::ephemeral::EphemeralStorage;
     use crate::buffer_cache::SharedBufferCache;
     use crate::catalog::Catalog;
+    use crate::executor::select::execute_select;
+    use crate::sql::ast::*;
+    use crate::storage::ephemeral::EphemeralStorage;
     use std::sync::Arc;
 
     async fn setup() -> (Arc<SharedBufferCache>, Arc<Catalog>) {
@@ -51,7 +51,9 @@ mod tests {
             group_by: vec![],
             having: None,
             order_by: vec![],
-            limit: Some(LimitClause::Expr(Expr::Literal(Literal::Number("5".to_string())))),
+            limit: Some(LimitClause::Expr(Expr::Literal(Literal::Number(
+                "5".to_string(),
+            )))),
             offset: None,
             locking: vec![],
             set_operations: vec![],
@@ -109,12 +111,10 @@ mod tests {
         let row: Vec<String> = vec![];
         let expr = Expr::Case {
             operand: None,
-            when_clauses: vec![
-                WhenClause {
-                    when: Box::new(Expr::Literal(Literal::Bool(true))),
-                    then: Box::new(Expr::Literal(Literal::String("yes".to_string()))),
-                },
-            ],
+            when_clauses: vec![WhenClause {
+                when: Box::new(Expr::Literal(Literal::Bool(true))),
+                then: Box::new(Expr::Literal(Literal::String("yes".to_string()))),
+            }],
             else_clause: Some(Box::new(Expr::Literal(Literal::String("no".to_string())))),
         };
         let result = crate::server::evaluate_expr(&expr, &row, None);
@@ -144,7 +144,9 @@ mod tests {
                     then: Box::new(Expr::Literal(Literal::String("two".to_string()))),
                 },
             ],
-            else_clause: Some(Box::new(Expr::Literal(Literal::String("other".to_string())))),
+            else_clause: Some(Box::new(Expr::Literal(Literal::String(
+                "other".to_string(),
+            )))),
         };
         let result = crate::server::evaluate_expr(&expr, &row, Some(&desc));
         assert_eq!(result, Some("two".to_string()));
@@ -188,7 +190,10 @@ mod tests {
             filter: None,
             over: None,
         }));
-        assert_eq!(crate::server::evaluate_expr(&expr, &row, Some(&desc)), Some("5".to_string()));
+        assert_eq!(
+            crate::server::evaluate_expr(&expr, &row, Some(&desc)),
+            Some("5".to_string())
+        );
 
         // UPPER
         let expr = Expr::Function(Box::new(FunctionCall {
@@ -197,7 +202,10 @@ mod tests {
             filter: None,
             over: None,
         }));
-        assert_eq!(crate::server::evaluate_expr(&expr, &row, Some(&desc)), Some("HELLO".to_string()));
+        assert_eq!(
+            crate::server::evaluate_expr(&expr, &row, Some(&desc)),
+            Some("HELLO".to_string())
+        );
 
         // LOWER
         let expr = Expr::Function(Box::new(FunctionCall {
@@ -206,7 +214,10 @@ mod tests {
             filter: None,
             over: None,
         }));
-        assert_eq!(crate::server::evaluate_expr(&expr, &row, Some(&desc)), Some("hello".to_string()));
+        assert_eq!(
+            crate::server::evaluate_expr(&expr, &row, Some(&desc)),
+            Some("hello".to_string())
+        );
     }
 
     #[test]
@@ -320,13 +331,13 @@ mod tests {
         let row: Vec<String> = vec![];
         let expr = Expr::Case {
             operand: None,
-            when_clauses: vec![
-                WhenClause {
-                    when: Box::new(Expr::Literal(Literal::Bool(false))),
-                    then: Box::new(Expr::Literal(Literal::String("no".to_string()))),
-                },
-            ],
-            else_clause: Some(Box::new(Expr::Literal(Literal::String("other".to_string())))),
+            when_clauses: vec![WhenClause {
+                when: Box::new(Expr::Literal(Literal::Bool(false))),
+                then: Box::new(Expr::Literal(Literal::String("no".to_string()))),
+            }],
+            else_clause: Some(Box::new(Expr::Literal(Literal::String(
+                "other".to_string(),
+            )))),
         };
         let result = crate::server::evaluate_expr(&expr, &row, None);
         assert_eq!(result, Some("other".to_string()));

@@ -42,7 +42,8 @@ impl ExtendedQueryState {
         parameter_types: Vec<u32>,
     ) -> anyhow::Result<()> {
         let mut parser = crate::protocol::parser::Parser::new();
-        let query = parser.feed(sql.as_bytes())
+        let query = parser
+            .feed(sql.as_bytes())
             .ok_or_else(|| anyhow::anyhow!("Failed to parse SQL: {}", sql))?;
 
         let stmt = PreparedStatement {
@@ -68,12 +69,16 @@ impl ExtendedQueryState {
         result_formats: Vec<i16>,
     ) -> anyhow::Result<()> {
         let stmt = if statement_name.is_empty() {
-            self.unnamed_statement.as_ref()
+            self.unnamed_statement
+                .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("No unnamed prepared statement"))?
                 .clone()
         } else {
-            self.statements.get(statement_name)
-                .ok_or_else(|| anyhow::anyhow!("Prepared statement \"{}\" not found", statement_name))?
+            self.statements
+                .get(statement_name)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Prepared statement \"{}\" not found", statement_name)
+                })?
                 .clone()
         };
 
@@ -132,7 +137,9 @@ mod tests {
     #[test]
     fn test_prepare_and_bind() {
         let mut state = ExtendedQueryState::new();
-        state.prepare("stmt1", "SELECT * FROM users WHERE id = 1;\n", vec![]).unwrap();
+        state
+            .prepare("stmt1", "SELECT * FROM users WHERE id = 1;\n", vec![])
+            .unwrap();
         state.bind("portal1", "stmt1", vec![], vec![]).unwrap();
         assert!(state.get_portal("portal1").is_some());
     }
@@ -140,7 +147,9 @@ mod tests {
     #[test]
     fn test_prepare_unnamed() {
         let mut state = ExtendedQueryState::new();
-        state.prepare("", "INSERT INTO users VALUES (1);\n", vec![]).unwrap();
+        state
+            .prepare("", "INSERT INTO users VALUES (1);\n", vec![])
+            .unwrap();
         state.bind("", "", vec![], vec![]).unwrap();
         assert!(state.get_portal("").is_some());
     }
@@ -148,7 +157,9 @@ mod tests {
     #[test]
     fn test_close_statement() {
         let mut state = ExtendedQueryState::new();
-        state.prepare("stmt1", "SELECT * FROM users;\n", vec![]).unwrap();
+        state
+            .prepare("stmt1", "SELECT * FROM users;\n", vec![])
+            .unwrap();
         state.close_statement("stmt1");
         assert!(state.bind("p", "stmt1", vec![], vec![]).is_err());
     }
@@ -156,7 +167,9 @@ mod tests {
     #[test]
     fn test_close_portal() {
         let mut state = ExtendedQueryState::new();
-        state.prepare("s", "SELECT * FROM users;\n", vec![]).unwrap();
+        state
+            .prepare("s", "SELECT * FROM users;\n", vec![])
+            .unwrap();
         state.bind("p", "s", vec![], vec![]).unwrap();
         state.close_portal("p");
         assert!(state.get_portal("p").is_none());
@@ -165,8 +178,12 @@ mod tests {
     #[test]
     fn test_close_all() {
         let mut state = ExtendedQueryState::new();
-        state.prepare("s1", "SELECT * FROM users;\n", vec![]).unwrap();
-        state.prepare("s2", "SELECT * FROM orders;\n", vec![]).unwrap();
+        state
+            .prepare("s1", "SELECT * FROM users;\n", vec![])
+            .unwrap();
+        state
+            .prepare("s2", "SELECT * FROM orders;\n", vec![])
+            .unwrap();
         state.bind("p1", "s1", vec![], vec![]).unwrap();
         state.close_all();
         assert!(state.get_portal("p1").is_none());
@@ -190,8 +207,12 @@ mod tests {
     #[test]
     fn test_multiple_portals() {
         let mut state = ExtendedQueryState::new();
-        state.prepare("s1", "SELECT * FROM users;\n", vec![]).unwrap();
-        state.prepare("s2", "SELECT * FROM orders;\n", vec![]).unwrap();
+        state
+            .prepare("s1", "SELECT * FROM users;\n", vec![])
+            .unwrap();
+        state
+            .prepare("s2", "SELECT * FROM orders;\n", vec![])
+            .unwrap();
         state.bind("p1", "s1", vec![], vec![]).unwrap();
         state.bind("p2", "s2", vec![], vec![]).unwrap();
         assert!(state.get_portal("p1").is_some());

@@ -1,5 +1,5 @@
-use std::time::Duration;
 use std::sync::Mutex;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub struct AuditLog {
@@ -133,8 +133,7 @@ mod tests {
 
     #[test]
     fn test_audit_log_with_error() {
-        let log = AuditLog::new("user1", "testdb", "SELECT 1", 1)
-            .with_error("syntax error");
+        let log = AuditLog::new("user1", "testdb", "SELECT 1", 1).with_error("syntax error");
         assert!(!log.success);
         assert_eq!(log.error_message.unwrap(), "syntax error");
     }

@@ -1,7 +1,7 @@
 use crate::types::Oid;
-use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub mod locks;
 pub mod timeouts;
@@ -148,7 +148,10 @@ impl TransactionManager {
     fn create_snapshot(&self, current_xid: TransactionId) -> Snapshot {
         let active = self.active.read();
         let active_xids: Vec<TransactionId> = active.keys().cloned().collect();
-        Snapshot { xid: current_xid, active_xids }
+        Snapshot {
+            xid: current_xid,
+            active_xids,
+        }
     }
 
     pub fn active_count(&self) -> usize {

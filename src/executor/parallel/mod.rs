@@ -1,8 +1,8 @@
 pub mod worker;
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use tokio::sync::Barrier;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

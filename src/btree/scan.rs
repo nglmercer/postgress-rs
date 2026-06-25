@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScanDirection {
     Forward,
@@ -50,7 +49,11 @@ pub struct SkipScanIterator<'a> {
 }
 
 impl<'a> SkipScanIterator<'a> {
-    pub fn new(entries: &'a [(Vec<u8>, u32, u16)], direction: ScanDirection, skip_duplicates: bool) -> Self {
+    pub fn new(
+        entries: &'a [(Vec<u8>, u32, u16)],
+        direction: ScanDirection,
+        skip_duplicates: bool,
+    ) -> Self {
         Self {
             entries,
             position: 0,
@@ -178,8 +181,7 @@ mod tests {
 
     #[test]
     fn test_should_skip() {
-        let scan = BTreeScan::new(1, None, ScanDirection::Forward)
-            .with_skip_duplicates(true);
+        let scan = BTreeScan::new(1, None, ScanDirection::Forward).with_skip_duplicates(true);
 
         assert!(scan.should_skip(b"key1", b"key1"));
         assert!(!scan.should_skip(b"key1", b"key2"));
@@ -257,9 +259,7 @@ mod tests {
 
     #[test]
     fn test_skip_to_next_key_boundary() {
-        let entries = vec![
-            (b"key1".to_vec(), 1, 0),
-        ];
+        let entries = vec![(b"key1".to_vec(), 1, 0)];
 
         assert_eq!(skip_to_next_key(&entries, 0), 1);
         assert_eq!(skip_to_next_key(&entries, 1), 1);

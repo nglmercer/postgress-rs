@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::types::{Oid, PageId};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct BlockRangeSummary {
@@ -78,7 +78,10 @@ impl BrinIndex {
             range.distinct_count += 1;
         }
 
-        self.values.entry(range_idx as u32).or_default().push((value.to_string(), tid));
+        self.values
+            .entry(range_idx as u32)
+            .or_default()
+            .push((value.to_string(), tid));
     }
 
     pub fn lookup(&self, value: &str) -> Vec<(PageId, u16)> {

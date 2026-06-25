@@ -1,5 +1,5 @@
-use crate::sql::ast::*;
 use super::{Parser, Token};
+use crate::sql::ast::*;
 
 impl Parser {
     pub(crate) fn parse_expr(&mut self) -> anyhow::Result<Expr> {
@@ -52,8 +52,10 @@ impl Parser {
         match self.peek() {
             Token::Eq => {
                 self.advance();
-                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME") {
-                    let is_some = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME")
+                {
+                    let is_some =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
                     self.advance();
                     let right = self.parse_primary()?;
                     if is_some {
@@ -80,8 +82,10 @@ impl Parser {
             }
             Token::Neq => {
                 self.advance();
-                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME") {
-                    let is_some = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME")
+                {
+                    let is_some =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
                     self.advance();
                     let right = self.parse_primary()?;
                     if is_some {
@@ -108,8 +112,10 @@ impl Parser {
             }
             Token::Lt => {
                 self.advance();
-                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME") {
-                    let is_some = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME")
+                {
+                    let is_some =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
                     self.advance();
                     let right = self.parse_primary()?;
                     if is_some {
@@ -136,8 +142,10 @@ impl Parser {
             }
             Token::Gt => {
                 self.advance();
-                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME") {
-                    let is_some = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME")
+                {
+                    let is_some =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
                     self.advance();
                     let right = self.parse_primary()?;
                     if is_some {
@@ -164,8 +172,10 @@ impl Parser {
             }
             Token::LtEq => {
                 self.advance();
-                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME") {
-                    let is_some = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME")
+                {
+                    let is_some =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
                     self.advance();
                     let right = self.parse_primary()?;
                     if is_some {
@@ -192,8 +202,10 @@ impl Parser {
             }
             Token::GtEq => {
                 self.advance();
-                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME") {
-                    let is_some = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
+                if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ANY" || k.to_uppercase() == "SOME")
+                {
+                    let is_some =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "SOME");
                     self.advance();
                     let right = self.parse_primary()?;
                     if is_some {
@@ -540,7 +552,8 @@ impl Parser {
             }
             Token::Keyword(k) if k.to_uppercase() == "CASE" => {
                 self.advance();
-                let operand = if !matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHEN") {
+                let operand = if !matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHEN")
+                {
                     Some(Box::new(self.parse_expr()?))
                 } else {
                     None
@@ -561,7 +574,8 @@ impl Parser {
                     });
                 }
 
-                let else_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ELSE") {
+                let else_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ELSE")
+                {
                     self.advance();
                     Some(Box::new(self.parse_expr()?))
                 } else {
@@ -773,7 +787,8 @@ impl Parser {
 
                     self.expect(&Token::RParen)?;
 
-                    let filter = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "FILTER") {
+                    let filter = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "FILTER")
+                    {
                         self.advance();
                         self.expect(&Token::LParen)?;
                         self.expect_keyword("WHERE")?;
@@ -784,7 +799,8 @@ impl Parser {
                         None
                     };
 
-                    let over = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "OVER") {
+                    let over = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "OVER")
+                    {
                         self.advance();
                         Some(Box::new(self.parse_window_spec()?))
                     } else {
@@ -812,7 +828,10 @@ impl Parser {
                 } else if matches!(self.peek(), Token::Dot) {
                     self.advance();
                     let column = self.expect_ident()?;
-                    Ok(Expr::QualifiedIdentifier { table: name, column })
+                    Ok(Expr::QualifiedIdentifier {
+                        table: name,
+                        column,
+                    })
                 } else {
                     Ok(Expr::Identifier(name))
                 }
@@ -889,7 +908,11 @@ impl Parser {
                     }
                     _ => NullsOrder::Default,
                 };
-                order_by.push(OrderByItem { expr, direction, nulls });
+                order_by.push(OrderByItem {
+                    expr,
+                    direction,
+                    nulls,
+                });
                 if !matches!(self.peek(), Token::Comma) {
                     break;
                 }
@@ -898,28 +921,27 @@ impl Parser {
         }
 
         // Parse frame clause: ROWS|RANGE|GROUPS ...
-        let frame = if matches!(self.peek(), Token::Keyword(k) 
-            if k.to_uppercase() == "ROWS" || k.to_uppercase() == "RANGE" || k.to_uppercase() == "GROUPS") 
-        {
+        let frame = if matches!(
+            self.peek(),
+            Token::Keyword(k)
+                if k.to_uppercase() == "ROWS"
+                    || k.to_uppercase() == "RANGE"
+                    || k.to_uppercase() == "GROUPS"
+        ) {
             let _frame_type = self.advance();
-            let is_between = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "BETWEEN");
+            let is_between =
+                matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "BETWEEN");
             if is_between {
                 self.advance();
                 let start = self.parse_frame_bound()?;
                 self.expect_keyword("AND")?;
                 let end = Some(self.parse_frame_bound()?);
-                Some(Box::new(FrameClause {
-                    start,
-                    end,
-                }))
+                Some(Box::new(FrameClause { start, end }))
             } else {
                 let start = self.parse_frame_bound()?;
                 // Single bound: end defaults to CURRENT ROW
                 let end = Some(Box::new(FrameBound::CurrentRow));
-                Some(Box::new(FrameClause {
-                    start,
-                    end,
-                }))
+                Some(Box::new(FrameClause { start, end }))
             }
         } else {
             None

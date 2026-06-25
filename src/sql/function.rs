@@ -1,4 +1,4 @@
-use crate::sql::ast::{Expr, Statement, DataType, SelectStatement};
+use crate::sql::ast::{DataType, Expr, SelectStatement, Statement};
 use crate::types::Oid;
 use std::collections::HashMap;
 
@@ -105,7 +105,13 @@ pub struct TriggerDef {
 }
 
 impl TriggerDef {
-    pub fn new(name: &str, table_oid: Oid, timing: TriggerTiming, events: Vec<TriggerEvent>, function_name: &str) -> Self {
+    pub fn new(
+        name: &str,
+        table_oid: Oid,
+        timing: TriggerTiming,
+        events: Vec<TriggerEvent>,
+        function_name: &str,
+    ) -> Self {
         Self {
             name: name.to_string(),
             table_oid,
@@ -157,7 +163,8 @@ impl FunctionRegistry {
     }
 
     pub fn get_triggers_for_table(&self, table_oid: Oid, event: &TriggerEvent) -> Vec<&TriggerDef> {
-        self.triggers.iter()
+        self.triggers
+            .iter()
             .filter(|t| t.table_oid == table_oid && t.applies_to_event(event))
             .collect()
     }
@@ -182,7 +189,7 @@ impl Default for FunctionRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::ast::{Literal, BinaryOperator};
+    use crate::sql::ast::{BinaryOperator, Literal};
 
     #[test]
     fn test_function_def() {
@@ -200,8 +207,7 @@ mod tests {
             locking: vec![],
             set_operations: vec![],
         });
-        let func = FunctionDef::new("get_count", body)
-            .with_returns(DataType::BigInt);
+        let func = FunctionDef::new("get_count", body).with_returns(DataType::BigInt);
         assert_eq!(func.name, "get_count");
         assert!(func.returns.is_some());
     }
@@ -232,7 +238,13 @@ mod tests {
     #[test]
     fn test_trigger_registry() {
         let mut registry = FunctionRegistry::new();
-        let trigger = TriggerDef::new("tr1", Oid(1), TriggerTiming::Before, vec![TriggerEvent::Insert], "fn1");
+        let trigger = TriggerDef::new(
+            "tr1",
+            Oid(1),
+            TriggerTiming::Before,
+            vec![TriggerEvent::Insert],
+            "fn1",
+        );
         registry.register_trigger(trigger);
         let triggers = registry.get_triggers_for_table(Oid(1), &TriggerEvent::Insert);
         assert_eq!(triggers.len(), 1);

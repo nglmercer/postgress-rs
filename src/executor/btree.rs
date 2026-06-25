@@ -1,6 +1,9 @@
-use crate::types::{PageId, Oid};
+use crate::btree::{
+    btree_insert as btree_insert_page, btree_search, BTreeIndex, IndexColumn, IndexTuple,
+    SortDirection,
+};
 use crate::storage::StorageTrait;
-use crate::btree::{IndexTuple, btree_insert as btree_insert_page, btree_search, BTreeIndex, IndexColumn, SortDirection};
+use crate::types::{Oid, PageId};
 
 pub struct BTreeScan {
     pub index_oid: Oid,
@@ -91,13 +94,13 @@ fn can_satisfy_from_index(index: &BTreeIndex, select_columns: &[String]) -> bool
     true
 }
 
-pub fn encode_index_key(
-    values: &[String],
-    columns: &[IndexColumn],
-) -> Vec<u8> {
+pub fn encode_index_key(values: &[String], columns: &[IndexColumn]) -> Vec<u8> {
     let mut key = Vec::new();
     for (i, val) in values.iter().enumerate() {
-        let direction = columns.get(i).map(|c| c.direction).unwrap_or(SortDirection::Asc);
+        let direction = columns
+            .get(i)
+            .map(|c| c.direction)
+            .unwrap_or(SortDirection::Asc);
         let nulls_first = columns.get(i).map(|c| c.nulls_first).unwrap_or(false);
 
         // Encode null indicator
@@ -106,7 +109,11 @@ pub fn encode_index_key(
             key.push(if nulls_first { 1u8 } else { 0u8 });
         } else {
             key.push(1u8); // not null
-            key.push(if direction == SortDirection::Desc { 1u8 } else { 0u8 });
+            key.push(if direction == SortDirection::Desc {
+                1u8
+            } else {
+                0u8
+            });
 
             // Encode value length and data
             let val_bytes = val.as_bytes();
@@ -121,10 +128,7 @@ pub fn encode_index_key(
     key
 }
 
-pub fn decode_index_key(
-    key: &[u8],
-    _columns: &[IndexColumn],
-) -> Vec<String> {
+pub fn decode_index_key(key: &[u8], _columns: &[IndexColumn]) -> Vec<String> {
     let mut values = Vec::new();
     let mut pos = 0;
 
@@ -148,9 +152,8 @@ pub fn decode_index_key(
                 break;
             }
 
-            let len = u32::from_le_bytes([
-                key[pos], key[pos + 1], key[pos + 2], key[pos + 3],
-            ]) as usize;
+            let len =
+                u32::from_le_bytes([key[pos], key[pos + 1], key[pos + 2], key[pos + 3]]) as usize;
             pos += 4;
 
             if pos + len > key.len() {
@@ -225,8 +228,16 @@ mod tests {
     #[test]
     fn test_encode_decode_index_key() {
         let columns = vec![
-            IndexColumn { name: "id".to_string(), direction: SortDirection::Asc, nulls_first: false },
-            IndexColumn { name: "name".to_string(), direction: SortDirection::Desc, nulls_first: true },
+            IndexColumn {
+                name: "id".to_string(),
+                direction: SortDirection::Asc,
+                nulls_first: false,
+            },
+            IndexColumn {
+                name: "name".to_string(),
+                direction: SortDirection::Desc,
+                nulls_first: true,
+            },
         ];
 
         let values = vec!["42".to_string(), "hello".to_string()];
@@ -238,9 +249,11 @@ mod tests {
 
     #[test]
     fn test_encode_decode_with_null() {
-        let columns = vec![
-            IndexColumn { name: "id".to_string(), direction: SortDirection::Asc, nulls_first: false },
-        ];
+        let columns = vec![IndexColumn {
+            name: "id".to_string(),
+            direction: SortDirection::Asc,
+            nulls_first: false,
+        }];
 
         let values = vec!["NULL".to_string()];
         let key = encode_index_key(&values, &columns);

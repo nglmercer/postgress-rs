@@ -1,6 +1,6 @@
-use crate::types::Oid;
+use super::{PartitionEntry, PartitionManager};
 use crate::sql::ast::Expr;
-use super::{PartitionManager, PartitionEntry};
+use crate::types::Oid;
 
 pub struct PartitionPruner;
 
@@ -19,7 +19,9 @@ impl PartitionPruner {
             }
         }
 
-        partition_manager.get_partitions().iter()
+        partition_manager
+            .get_partitions()
+            .iter()
             .map(|p| p.partition_oid)
             .collect()
     }
@@ -76,19 +78,26 @@ impl PartitionPruner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::ast::{Literal, BinaryOperator};
-    use crate::executor::partition::{PartitionStrategy, PartitionEntry, PartitionBound, ListBound};
+    use crate::executor::partition::{
+        ListBound, PartitionBound, PartitionEntry, PartitionStrategy,
+    };
+    use crate::sql::ast::{BinaryOperator, Literal};
 
     #[test]
     fn test_prune_partitions_no_where() {
-        let mut pm = PartitionManager::new(Oid(1), PartitionStrategy::List, vec!["region".to_string()]);
+        let mut pm =
+            PartitionManager::new(Oid(1), PartitionStrategy::List, vec!["region".to_string()]);
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(2),
-            bound: PartitionBound::List(vec![ListBound { values: vec!["us-east".to_string()] }]),
+            bound: PartitionBound::List(vec![ListBound {
+                values: vec!["us-east".to_string()],
+            }]),
         });
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(3),
-            bound: PartitionBound::List(vec![ListBound { values: vec!["eu-west".to_string()] }]),
+            bound: PartitionBound::List(vec![ListBound {
+                values: vec!["eu-west".to_string()],
+            }]),
         });
 
         let result = PartitionPruner::prune_partitions(&None, &pm);
@@ -97,14 +106,19 @@ mod tests {
 
     #[test]
     fn test_prune_partitions_with_equality() {
-        let mut pm = PartitionManager::new(Oid(1), PartitionStrategy::List, vec!["region".to_string()]);
+        let mut pm =
+            PartitionManager::new(Oid(1), PartitionStrategy::List, vec!["region".to_string()]);
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(2),
-            bound: PartitionBound::List(vec![ListBound { values: vec!["us-east".to_string()] }]),
+            bound: PartitionBound::List(vec![ListBound {
+                values: vec!["us-east".to_string()],
+            }]),
         });
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(3),
-            bound: PartitionBound::List(vec![ListBound { values: vec!["eu-west".to_string()] }]),
+            bound: PartitionBound::List(vec![ListBound {
+                values: vec!["eu-west".to_string()],
+            }]),
         });
 
         let where_clause = Expr::BinaryOp {

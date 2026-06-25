@@ -1,12 +1,17 @@
-use postgress_rs::storage::ephemeral::EphemeralStorage;
 use postgress_rs::buffer_cache::SharedBufferCache;
 use postgress_rs::catalog::Catalog;
 use postgress_rs::executor::heap::*;
-use postgress_rs::wal::WAL;
+use postgress_rs::storage::ephemeral::EphemeralStorage;
 use postgress_rs::types::{Oid, Relation};
+use postgress_rs::wal::WAL;
 use std::sync::Arc;
 
-async fn setup() -> (Arc<EphemeralStorage>, Arc<WAL>, Arc<SharedBufferCache>, Arc<Catalog>) {
+async fn setup() -> (
+    Arc<EphemeralStorage>,
+    Arc<WAL>,
+    Arc<SharedBufferCache>,
+    Arc<Catalog>,
+) {
     let storage = Arc::new(EphemeralStorage::new());
     let wal = Arc::new(WAL::new(8192));
     let cache = Arc::new(SharedBufferCache::new(storage.clone()));
@@ -16,11 +21,10 @@ async fn setup() -> (Arc<EphemeralStorage>, Arc<WAL>, Arc<SharedBufferCache>, Ar
 }
 
 async fn create_test_table(_cache: &Arc<SharedBufferCache>, catalog: &Arc<Catalog>) -> Oid {
-    let rel = Relation::empty("test", vec![
-        ("id", Oid(23)),
-        ("name", Oid(25)),
-        ("value", Oid(23)),
-    ]);
+    let rel = Relation::empty(
+        "test",
+        vec![("id", Oid(23)), ("name", Oid(25)), ("value", Oid(23))],
+    );
     catalog.create_relation(rel).await.unwrap()
 }
 
@@ -29,10 +33,16 @@ async fn test_tuple_insert_and_scan() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
     let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
     assert_eq!(rows.len(), 1);
@@ -47,14 +57,20 @@ async fn test_multiple_inserts_and_scan() {
     let rel_oid = create_test_table(&cache, &catalog).await;
 
     for i in 0..10 {
-        tuple_insert(&cache, &wal, &TupleInsert {
-            rel_oid,
-            values: vec![
-                format!("{}", i).into_bytes(),
-                format!("user_{}", i).into_bytes(),
-                format!("{}", i * 10).into_bytes(),
-            ],
-        }).await.unwrap();
+        tuple_insert(
+            &cache,
+            &wal,
+            &TupleInsert {
+                rel_oid,
+                values: vec![
+                    format!("{}", i).into_bytes(),
+                    format!("user_{}", i).into_bytes(),
+                    format!("{}", i * 10).into_bytes(),
+                ],
+            },
+        )
+        .await
+        .unwrap();
     }
 
     let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
@@ -74,14 +90,20 @@ async fn test_tuple_insert_bulk() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert_bulk(&cache, &wal, &TupleInsertBulk {
-        rel_oid,
-        tuples: vec![
-            vec![b"1".to_vec(), b"a".to_vec(), b"10".to_vec()],
-            vec![b"2".to_vec(), b"b".to_vec(), b"20".to_vec()],
-            vec![b"3".to_vec(), b"c".to_vec(), b"30".to_vec()],
-        ],
-    }).await.unwrap();
+    tuple_insert_bulk(
+        &cache,
+        &wal,
+        &TupleInsertBulk {
+            rel_oid,
+            tuples: vec![
+                vec![b"1".to_vec(), b"a".to_vec(), b"10".to_vec()],
+                vec![b"2".to_vec(), b"b".to_vec(), b"20".to_vec()],
+                vec![b"3".to_vec(), b"c".to_vec(), b"30".to_vec()],
+            ],
+        },
+    )
+    .await
+    .unwrap();
 
     let rows = heap_scan(&cache, rel_oid.0).await.unwrap();
     assert_eq!(rows.len(), 3);
@@ -92,19 +114,23 @@ async fn test_tuple_update() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
-
-    let updated = tuple_update(
+    tuple_insert(
         &cache,
         &wal,
-        rel_oid,
-        1, // column_idx = name
-        b"ALICE",
-        None,
-    ).await.unwrap();
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+
+    let updated = tuple_update(
+        &cache, &wal, rel_oid, 1, // column_idx = name
+        b"ALICE", None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(updated, 1);
 
@@ -120,14 +146,26 @@ async fn test_tuple_update_with_filter() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
     let updated = tuple_update(
         &cache,
@@ -135,8 +173,13 @@ async fn test_tuple_update_with_filter() {
         rel_oid,
         2, // column_idx = value
         b"999",
-        Some(Filter { column: 0, value: b"1".to_vec() }), // only where id=1
-    ).await.unwrap();
+        Some(Filter {
+            column: 0,
+            value: b"1".to_vec(),
+        }), // only where id=1
+    )
+    .await
+    .unwrap();
 
     assert_eq!(updated, 1);
 
@@ -150,21 +193,32 @@ async fn test_tuple_delete() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
-    }).await.unwrap();
-
-    let deleted = tuple_delete(
+    tuple_insert(
         &cache,
         &wal,
-        rel_oid,
-        None, // delete all
-    ).await.unwrap();
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+
+    let deleted = tuple_delete(
+        &cache, &wal, rel_oid, None, // delete all
+    )
+    .await
+    .unwrap();
 
     assert_eq!(deleted, 2);
 
@@ -177,21 +231,38 @@ async fn test_tuple_delete_with_filter() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
     let deleted = tuple_delete(
         &cache,
         &wal,
         rel_oid,
-        Some(Filter { column: 0, value: b"1".to_vec() }), // delete where id=1
-    ).await.unwrap();
+        Some(Filter {
+            column: 0,
+            value: b"1".to_vec(),
+        }), // delete where id=1
+    )
+    .await
+    .unwrap();
 
     assert_eq!(deleted, 1);
 
@@ -205,16 +276,36 @@ async fn test_slow_scan_all() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
-    let rows = slow_scan(&cache, &SlowScan { rel_oid, filter: None }).await.unwrap();
+    let rows = slow_scan(
+        &cache,
+        &SlowScan {
+            rel_oid,
+            filter: None,
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(rows.len(), 2);
 }
 
@@ -223,19 +314,39 @@ async fn test_slow_scan_with_filter() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
-    let rows = slow_scan(&cache, &SlowScan {
-        rel_oid,
-        filter: Some(Filter { column: 1, value: b"alice".to_vec() }),
-    }).await.unwrap();
+    let rows = slow_scan(
+        &cache,
+        &SlowScan {
+            rel_oid,
+            filter: Some(Filter {
+                column: 1,
+                value: b"alice".to_vec(),
+            }),
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].1[1], "alice");
@@ -244,10 +355,15 @@ async fn test_slow_scan_with_filter() {
 #[tokio::test]
 async fn test_tuple_insert_nonexistent_relation() {
     let (_, wal, cache, _) = setup().await;
-    let result = tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid: Oid(99999),
-        values: vec![b"1".to_vec()],
-    }).await;
+    let result = tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid: Oid(99999),
+            values: vec![b"1".to_vec()],
+        },
+    )
+    .await;
     assert!(result.is_err());
 }
 
@@ -280,10 +396,16 @@ async fn test_tuple_insert_returns_item_pointer() {
     let rows_before = heap_scan(&cache, rel_oid.0).await.unwrap();
     assert_eq!(rows_before.len(), 0);
 
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"test".to_vec(), b"0".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"test".to_vec(), b"0".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
     let rows_after = heap_scan(&cache, rel_oid.0).await.unwrap();
     assert_eq!(rows_after.len(), 1);
@@ -295,7 +417,9 @@ async fn test_tuple_insert_returns_item_pointer() {
 async fn test_update_on_empty_table() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
-    let updated = tuple_update(&cache, &wal, rel_oid, 0, b"x", None).await.unwrap();
+    let updated = tuple_update(&cache, &wal, rel_oid, 0, b"x", None)
+        .await
+        .unwrap();
     assert_eq!(updated, 0);
 }
 
@@ -437,13 +561,24 @@ fn test_mvcc_invisible_future_xmin() {
 async fn test_heap_scan_with_snapshot() {
     let (_, wal, cache, catalog) = setup().await;
     let rel_oid = create_test_table(&cache, &catalog).await;
-    tuple_insert(&cache, &wal, &TupleInsert { rel_oid, values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()] }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
     let snapshot = postgress_rs::transaction::Snapshot {
         xid: postgress_rs::transaction::TransactionId(u32::MAX),
         active_xids: vec![],
     };
-    let rows = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot).await.unwrap();
+    let rows = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].1[1], "alice");
 }
@@ -454,23 +589,38 @@ async fn test_vacuum_relation() {
     let rel_oid = create_test_table(&cache, &catalog).await;
 
     // Insert a tuple (creates transaction xid = 1)
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"1".to_vec(), b"alice".to_vec(), b"100".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
     // Delete it (creates transaction xid = 2)
-    tuple_delete(&cache, &wal, rel_oid, Some(Filter {
-        column: 0,
-        value: b"1".to_vec(),
-    })).await.unwrap();
+    tuple_delete(
+        &cache,
+        &wal,
+        rel_oid,
+        Some(Filter {
+            column: 0,
+            value: b"1".to_vec(),
+        }),
+    )
+    .await
+    .unwrap();
 
     // Verify it's no longer visible
     let snapshot = postgress_rs::transaction::Snapshot {
         xid: postgress_rs::transaction::TransactionId(10),
         active_xids: vec![],
     };
-    let rows = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot).await.unwrap();
+    let rows = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 0);
 
     // Run vacuum (oldest_xmin is 5, since deletion xid is 2 < 5, it will be reclaimed)
@@ -478,12 +628,20 @@ async fn test_vacuum_relation() {
     assert_eq!(reclaimed, 1);
 
     // Insert a new tuple, verifying it is successfully inserted and visible
-    tuple_insert(&cache, &wal, &TupleInsert {
-        rel_oid,
-        values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
-    }).await.unwrap();
+    tuple_insert(
+        &cache,
+        &wal,
+        &TupleInsert {
+            rel_oid,
+            values: vec![b"2".to_vec(), b"bob".to_vec(), b"200".to_vec()],
+        },
+    )
+    .await
+    .unwrap();
 
-    let rows2 = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot).await.unwrap();
+    let rows2 = heap_scan_with_snapshot(&cache, rel_oid.0, &snapshot)
+        .await
+        .unwrap();
     assert_eq!(rows2.len(), 1);
     assert_eq!(rows2[0].1[1], "bob");
 }

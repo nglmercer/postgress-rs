@@ -1,16 +1,16 @@
-use crate::types::Oid;
 use crate::sql::ast::Statement;
+use crate::types::Oid;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Query {
-    Select { 
-        table: Oid, 
-        where_clause: Option<String>, 
-        columns: Vec<String> 
+    Select {
+        table: Oid,
+        where_clause: Option<String>,
+        columns: Vec<String>,
     },
-    Insert { 
-        table: Oid, 
-        values: Vec<Vec<u8>> 
+    Insert {
+        table: Oid,
+        values: Vec<Vec<u8>>,
     },
     CreateTable {
         name: String,

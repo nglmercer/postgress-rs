@@ -1,9 +1,9 @@
 use crate::types::{Oid, PageId};
 
 pub mod ephemeral;
-pub mod mmap;
-pub mod heap_page;
 pub mod fork;
+pub mod heap_page;
+pub mod mmap;
 pub mod toast;
 pub mod visibility_map;
 
@@ -28,7 +28,13 @@ pub trait StorageTrait: Send + Sync {
         let page_id = fork_page_id(rel_oid, fork, block);
         self.read_page(page_id)
     }
-    fn write_page_fork(&self, rel_oid: Oid, fork: ForkType, block: u32, data: &[u8]) -> anyhow::Result<()> {
+    fn write_page_fork(
+        &self,
+        rel_oid: Oid,
+        fork: ForkType,
+        block: u32,
+        data: &[u8],
+    ) -> anyhow::Result<()> {
         let page_id = fork_page_id(rel_oid, fork, block);
         self.write_page(page_id, data)
     }

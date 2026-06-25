@@ -473,13 +473,16 @@ pub async fn tuple_update(
             let xid = wal.allocate_xid();
 
             // Try HOT update first: if new tuple fits on same page, use LP_REDIRECT chain
-            if let Some(new_slot) = heap_page.hot_update(slot_idx as u16, &bincode::serialize(&{
-                let mut new_tup = tup.clone();
-                new_tup.xmin = xid;
-                new_tup.xmax = 0;
-                new_tup.data = new_data.clone();
-                new_tup
-            })?) {
+            if let Some(new_slot) = heap_page.hot_update(
+                slot_idx as u16,
+                &bincode::serialize(&{
+                    let mut new_tup = tup.clone();
+                    new_tup.xmin = xid;
+                    new_tup.xmax = 0;
+                    new_tup.data = new_data.clone();
+                    new_tup
+                })?,
+            ) {
                 tup.xmax = xid;
                 let old_encoded = bincode::serialize(&tup)?;
                 heap_page.tuples[slot_idx] = old_encoded;
@@ -494,7 +497,8 @@ pub async fn tuple_update(
                     page_id,
                     old_tuple: tup,
                     new_tuple: bincode::deserialize(&heap_page.tuples[new_slot as usize])?,
-                }).await?;
+                })
+                .await?;
                 updated += 1;
                 continue;
             }
@@ -639,7 +643,8 @@ pub async fn vacuum_relation(
                     let tuple_data = &heap_page.tuples[slot_idx];
                     if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
                         if tup.xmax != 0 && tup.xmax < oldest_xmin as u64 {
-                            heap_page.line_pointers[slot_idx].lp_flags = crate::storage::heap_page::LP_DEAD;
+                            heap_page.line_pointers[slot_idx].lp_flags =
+                                crate::storage::heap_page::LP_DEAD;
                             modified = true;
                             reclaimed_tuples += 1;
                         }

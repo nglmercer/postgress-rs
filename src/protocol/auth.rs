@@ -79,7 +79,9 @@ pub struct UserStore {
 
 impl UserStore {
     pub fn new() -> Self {
-        Self { users: HashMap::new() }
+        Self {
+            users: HashMap::new(),
+        }
     }
 
     pub fn add_user(&mut self, username: &str, password: &str) {

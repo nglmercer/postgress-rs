@@ -1,5 +1,5 @@
-use crate::sql::ast::*;
 use super::{Parser, Token};
+use crate::sql::ast::*;
 
 impl Parser {
     pub(crate) fn parse_insert(&mut self) -> anyhow::Result<InsertStatement> {
@@ -108,7 +108,8 @@ impl Parser {
                         self.advance();
                     }
 
-                    let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE") {
+                    let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE")
+                    {
                         self.advance();
                         Some(Box::new(self.parse_expr()?))
                     } else {
@@ -127,7 +128,8 @@ impl Parser {
             None
         };
 
-        let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING") {
+        let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING")
+        {
             self.advance();
             self.parse_select_list()?
         } else {
@@ -176,14 +178,16 @@ impl Parser {
             self.advance();
         }
 
-        let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE") {
+        let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE")
+        {
             self.advance();
             Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
 
-        let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING") {
+        let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING")
+        {
             self.advance();
             self.parse_select_list()?
         } else {
@@ -217,14 +221,16 @@ impl Parser {
             None
         };
 
-        let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE") {
+        let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE")
+        {
             self.advance();
             Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
 
-        let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING") {
+        let returning = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RETURNING")
+        {
             self.advance();
             self.parse_select_list()?
         } else {

@@ -1,7 +1,7 @@
-use crate::types::PageId;
 use crate::storage::StorageTrait;
-use std::collections::HashMap;
+use crate::types::PageId;
 use parking_lot::RwLock;
+use std::collections::HashMap;
 
 pub struct EphemeralStorage {
     pages: RwLock<HashMap<PageId, Vec<u8>>>,
@@ -18,7 +18,10 @@ impl EphemeralStorage {
 impl StorageTrait for EphemeralStorage {
     fn read_page(&self, page_id: PageId) -> anyhow::Result<Vec<u8>> {
         let pages = self.pages.read();
-        Ok(pages.get(&page_id).cloned().unwrap_or_else(|| vec![0u8; 8192]))
+        Ok(pages
+            .get(&page_id)
+            .cloned()
+            .unwrap_or_else(|| vec![0u8; 8192]))
     }
 
     fn write_page(&self, page_id: PageId, data: &[u8]) -> anyhow::Result<()> {

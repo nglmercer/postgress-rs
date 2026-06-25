@@ -78,9 +78,6 @@ mod tests {
             StatementTimeoutError.to_string(),
             "statement canceled due to statement timeout"
         );
-        assert_eq!(
-            LockTimeoutError.to_string(),
-            "lock timeout exceeded"
-        );
+        assert_eq!(LockTimeoutError.to_string(), "lock timeout exceeded");
     }
 }

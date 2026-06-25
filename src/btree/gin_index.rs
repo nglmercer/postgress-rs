@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::types::{Oid, PageId};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct GinIndexEntry {
@@ -56,9 +56,7 @@ impl GinIndex {
                 let normalized = key.to_lowercase();
                 self.entries.get(&normalized).cloned().unwrap_or_default()
             }
-            _ => {
-                self.entries.get(key).cloned().unwrap_or_default()
-            }
+            _ => self.entries.get(key).cloned().unwrap_or_default(),
         }
     }
 
@@ -118,7 +116,8 @@ impl GinIndex {
     }
 
     pub fn scan(&self) -> Vec<GinIndexEntry> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .map(|(key, tids)| GinIndexEntry {
                 key: key.clone(),
                 tids: tids.clone(),
@@ -165,7 +164,10 @@ mod tests {
         let mut index = GinIndex::new(Oid(1), Oid(100), GinIndexType::Array);
         let values = vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()];
         index.insert_array_values(&values, (PageId(1), 0));
-        index.insert_array_values(&vec!["tag1".to_string(), "tag2".to_string()], (PageId(1), 1));
+        index.insert_array_values(
+            &vec!["tag1".to_string(), "tag2".to_string()],
+            (PageId(1), 1),
+        );
 
         let query = vec!["tag1".to_string(), "tag2".to_string()];
         let results = index.contains(&query);

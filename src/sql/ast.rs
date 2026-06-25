@@ -552,7 +552,10 @@ pub enum FrameBound {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Identifier(String),
-    QualifiedIdentifier { table: String, column: String },
+    QualifiedIdentifier {
+        table: String,
+        column: String,
+    },
     Literal(Literal),
     Parameter(u32),
     IsNull(Box<Expr>),

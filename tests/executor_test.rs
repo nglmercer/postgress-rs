@@ -16,8 +16,12 @@ fn test_planner_seq_scan() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
     use postgress_rs::types::Oid;
-    
-    let query = Query::Select { table: Oid(5), where_clause: Some("id = 1".to_string()), columns: vec![] };
+
+    let query = Query::Select {
+        table: Oid(5),
+        where_clause: Some("id = 1".to_string()),
+        columns: vec![],
+    };
     let plan = Planner::plan(&query, &[]);
     if let postgress_rs::executor::planner::Plan::SeqScan(scan) = plan {
         assert_eq!(scan.rel_oid, 5);
@@ -30,8 +34,11 @@ fn test_planner_seq_scan() {
 fn test_planner_insert_plan() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
-    
-    let query = Query::Insert { table: Oid(10), values: vec![b"1".to_vec()] };
+
+    let query = Query::Insert {
+        table: Oid(10),
+        values: vec![b"1".to_vec()],
+    };
     let plan = Planner::plan(&query, &[]);
     if let postgress_rs::executor::planner::Plan::SeqScan(scan) = plan {
         assert_eq!(scan.rel_oid, 10);
@@ -44,56 +51,76 @@ fn test_planner_insert_plan() {
 fn test_planner_create_table() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
-    
-    let query = Query::CreateTable { name: "test".to_string(), columns: vec![] };
+
+    let query = Query::CreateTable {
+        name: "test".to_string(),
+        columns: vec![],
+    };
     let plan = Planner::plan(&query, &[]);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
 fn test_planner_drop_table() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
-    
-    let query = Query::DropTable { name: "test".to_string() };
+
+    let query = Query::DropTable {
+        name: "test".to_string(),
+    };
     let plan = Planner::plan(&query, &[]);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
 fn test_planner_begin() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
-    
+
     let query = Query::Begin { mode: None };
     let plan = Planner::plan(&query, &[]);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
 fn test_planner_commit() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
-    
+
     let plan = Planner::plan(&Query::Commit, &[]);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
 fn test_planner_rollback() {
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
-    
+
     let plan = Planner::plan(&Query::Rollback, &[]);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
 fn test_planner_index_scan_selection() {
+    use postgress_rs::catalog::IndexInfo;
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
     use postgress_rs::types::{Oid, PageId};
-    use postgress_rs::catalog::IndexInfo;
 
     let indexes = vec![IndexInfo {
         index_oid: Oid(100),
@@ -102,7 +129,11 @@ fn test_planner_index_scan_selection() {
         root_page: PageId(1),
     }];
 
-    let query = Query::Select { table: Oid(5), where_clause: Some("id = 42".to_string()), columns: vec![] };
+    let query = Query::Select {
+        table: Oid(5),
+        where_clause: Some("id = 42".to_string()),
+        columns: vec![],
+    };
     let plan = Planner::plan(&query, &indexes);
     match plan {
         postgress_rs::executor::planner::Plan::IndexScan(scan) => {
@@ -115,10 +146,10 @@ fn test_planner_index_scan_selection() {
 
 #[test]
 fn test_planner_index_scan_no_matching_index() {
+    use postgress_rs::catalog::IndexInfo;
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
     use postgress_rs::types::{Oid, PageId};
-    use postgress_rs::catalog::IndexInfo;
 
     let indexes = vec![IndexInfo {
         index_oid: Oid(100),
@@ -127,17 +158,24 @@ fn test_planner_index_scan_no_matching_index() {
         root_page: PageId(1),
     }];
 
-    let query = Query::Select { table: Oid(5), where_clause: Some("id = 42".to_string()), columns: vec![] };
+    let query = Query::Select {
+        table: Oid(5),
+        where_clause: Some("id = 42".to_string()),
+        columns: vec![],
+    };
     let plan = Planner::plan(&query, &indexes);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
 fn test_planner_index_scan_range_filter_falls_back() {
+    use postgress_rs::catalog::IndexInfo;
     use postgress_rs::executor::planner::Planner;
     use postgress_rs::protocol::codes::Query;
     use postgress_rs::types::{Oid, PageId};
-    use postgress_rs::catalog::IndexInfo;
 
     let indexes = vec![IndexInfo {
         index_oid: Oid(100),
@@ -146,9 +184,16 @@ fn test_planner_index_scan_range_filter_falls_back() {
         root_page: PageId(1),
     }];
 
-    let query = Query::Select { table: Oid(5), where_clause: Some("id > 42".to_string()), columns: vec![] };
+    let query = Query::Select {
+        table: Oid(5),
+        where_clause: Some("id > 42".to_string()),
+        columns: vec![],
+    };
     let plan = Planner::plan(&query, &indexes);
-    assert!(matches!(plan, postgress_rs::executor::planner::Plan::SeqScan(_)));
+    assert!(matches!(
+        plan,
+        postgress_rs::executor::planner::Plan::SeqScan(_)
+    ));
 }
 
 #[test]
@@ -204,7 +249,7 @@ fn test_parser_empty_input() {
 #[test]
 fn test_parser_select_star() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, SelectItem};
+    use postgress_rs::sql::ast::{SelectItem, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"SELECT * FROM users;\n");
     assert!(q.is_some());
@@ -236,7 +281,7 @@ fn test_parser_select_with_where() {
 #[test]
 fn test_parser_select_columns() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, SelectItem};
+    use postgress_rs::sql::ast::{SelectItem, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"SELECT name, age FROM users;\n");
     assert!(q.is_some());
@@ -258,7 +303,7 @@ fn test_parser_select_columns() {
 #[test]
 fn test_parser_insert() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, InsertSource};
+    use postgress_rs::sql::ast::{InsertSource, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"INSERT INTO users VALUES (1, 'alice');\n");
     assert!(q.is_some());
@@ -277,7 +322,8 @@ fn test_parser_create_table() {
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE TABLE users (id INT, name TEXT);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateTable(create))) = q {
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateTable(create))) = q
+    {
         assert_eq!(create.table.parts, vec!["users"]);
         assert_eq!(create.columns.len(), 2);
     } else {
@@ -288,11 +334,12 @@ fn test_parser_create_table() {
 #[test]
 fn test_parser_create_table_with_types() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, DataType};
+    use postgress_rs::sql::ast::{DataType, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE TABLE t (a INT, b TEXT, c BOOL);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateTable(create))) = q {
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateTable(create))) = q
+    {
         assert!(matches!(create.columns[0].data_type, DataType::Int));
         assert!(matches!(create.columns[1].data_type, DataType::Text));
         assert!(matches!(create.columns[2].data_type, DataType::Boolean));
@@ -318,7 +365,7 @@ fn test_parser_drop_table() {
 #[test]
 fn test_parser_update() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, Expr, Literal};
+    use postgress_rs::sql::ast::{Expr, Literal, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"UPDATE users SET name = 'bob' WHERE id = 1;\n");
     assert!(q.is_some());
@@ -326,7 +373,10 @@ fn test_parser_update() {
         assert_eq!(update.table.parts, vec!["users"]);
         assert_eq!(update.set_clauses.len(), 1);
         assert_eq!(update.set_clauses[0].column, "name");
-        assert!(matches!(*update.set_clauses[0].value, Expr::Literal(Literal::String(_))));
+        assert!(matches!(
+            *update.set_clauses[0].value,
+            Expr::Literal(Literal::String(_))
+        ));
         assert!(update.where_clause.is_some());
     } else {
         panic!("Expected Update query");
@@ -383,7 +433,10 @@ fn test_parser_begin() {
     let mut parser = Parser::new();
     let q = parser.feed(b"BEGIN;\n");
     assert!(q.is_some());
-    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Statement(Statement::Begin(_))));
+    assert!(matches!(
+        q.unwrap(),
+        postgress_rs::protocol::codes::Query::Statement(Statement::Begin(_))
+    ));
 }
 
 #[test]
@@ -393,7 +446,10 @@ fn test_parser_commit() {
     let mut parser = Parser::new();
     let q = parser.feed(b"COMMIT;\n");
     assert!(q.is_some());
-    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Statement(Statement::Commit)));
+    assert!(matches!(
+        q.unwrap(),
+        postgress_rs::protocol::codes::Query::Statement(Statement::Commit)
+    ));
 }
 
 #[test]
@@ -403,7 +459,10 @@ fn test_parser_rollback() {
     let mut parser = Parser::new();
     let q = parser.feed(b"ROLLBACK;\n");
     assert!(q.is_some());
-    assert!(matches!(q.unwrap(), postgress_rs::protocol::codes::Query::Statement(Statement::Rollback)));
+    assert!(matches!(
+        q.unwrap(),
+        postgress_rs::protocol::codes::Query::Statement(Statement::Rollback)
+    ));
 }
 
 #[test]
@@ -462,7 +521,7 @@ fn test_parser_insert_multiple_values() {
 #[test]
 fn test_parser_insert_numeric_values() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, InsertSource, Expr, Literal};
+    use postgress_rs::sql::ast::{Expr, InsertSource, Literal, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"INSERT INTO users VALUES (1, 2, 3);\n");
     assert!(q.is_some());
@@ -484,11 +543,12 @@ fn test_parser_insert_numeric_values() {
 #[test]
 fn test_parser_create_index() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, Expr};
+    use postgress_rs::sql::ast::{Expr, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE INDEX idx_users_id ON users (id);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateIndex(create))) = q {
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateIndex(create))) = q
+    {
         assert_eq!(create.name.parts, vec!["idx_users_id"]);
         assert_eq!(create.table.parts, vec!["users"]);
         assert_eq!(create.columns.len(), 1);
@@ -501,11 +561,12 @@ fn test_parser_create_index() {
 #[test]
 fn test_parser_create_index_multiple_words() {
     use postgress_rs::protocol::parser::Parser;
-    use postgress_rs::sql::ast::{Statement, Expr};
+    use postgress_rs::sql::ast::{Expr, Statement};
     let mut parser = Parser::new();
     let q = parser.feed(b"CREATE INDEX idx_orders_customer ON orders (customer_id);\n");
     assert!(q.is_some());
-    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateIndex(create))) = q {
+    if let Some(postgress_rs::protocol::codes::Query::Statement(Statement::CreateIndex(create))) = q
+    {
         assert_eq!(create.name.parts, vec!["idx_orders_customer"]);
         assert_eq!(create.table.parts, vec!["orders"]);
         assert_eq!(create.columns.len(), 1);

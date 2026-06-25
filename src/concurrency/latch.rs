@@ -1,5 +1,4 @@
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::Arc;
 use tokio::sync::Notify;
 
 pub struct Latch {

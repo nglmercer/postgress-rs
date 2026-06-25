@@ -1,14 +1,14 @@
-use crate::types::{PageId, Oid, Tuple};
 use crate::storage::ephemeral::EphemeralStorage;
 use crate::storage::StorageTrait;
-use std::sync::Arc;
+use crate::types::{Oid, PageId, Tuple};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
-pub mod recovery;
 pub mod archiving;
+pub mod recovery;
 
 pub const XLOG_PAGE_MAGIC: u16 = 0xD106;
 pub const XLP_FIRST_IS_CONTRECORD: u16 = 0x0001;

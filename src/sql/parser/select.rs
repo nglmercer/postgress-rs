@@ -1,5 +1,5 @@
-use crate::sql::ast::*;
 use super::{Parser, Token};
+use crate::sql::ast::*;
 
 impl Parser {
     pub(crate) fn parse_select(&mut self) -> anyhow::Result<SelectStatement> {
@@ -37,7 +37,8 @@ impl Parser {
             None
         };
 
-        let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE") {
+        let where_clause = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHERE")
+        {
             self.advance();
             Some(Box::new(self.parse_expr()?))
         } else {
@@ -94,7 +95,11 @@ impl Parser {
                     }
                     _ => NullsOrder::Default,
                 };
-                order_by.push(OrderByItem { expr, direction, nulls });
+                order_by.push(OrderByItem {
+                    expr,
+                    direction,
+                    nulls,
+                });
                 if !matches!(self.peek(), Token::Comma) {
                     break;
                 }
@@ -163,7 +168,11 @@ impl Parser {
                     }
                     let right = self.parse_select_body()?;
                     set_operations.push(SetOperation {
-                        operator: if all { SetOperator::UnionAll } else { SetOperator::Union },
+                        operator: if all {
+                            SetOperator::UnionAll
+                        } else {
+                            SetOperator::Union
+                        },
                         select: Box::new(right),
                     });
                 }
@@ -175,7 +184,11 @@ impl Parser {
                     }
                     let right = self.parse_select_body()?;
                     set_operations.push(SetOperation {
-                        operator: if all { SetOperator::IntersectAll } else { SetOperator::Intersect },
+                        operator: if all {
+                            SetOperator::IntersectAll
+                        } else {
+                            SetOperator::Intersect
+                        },
                         select: Box::new(right),
                     });
                 }
@@ -187,7 +200,11 @@ impl Parser {
                     }
                     let right = self.parse_select_body()?;
                     set_operations.push(SetOperation {
-                        operator: if all { SetOperator::ExceptAll } else { SetOperator::Except },
+                        operator: if all {
+                            SetOperator::ExceptAll
+                        } else {
+                            SetOperator::Except
+                        },
                         select: Box::new(right),
                     });
                 }
@@ -224,7 +241,8 @@ impl Parser {
 
     pub(crate) fn parse_with_select(&mut self) -> anyhow::Result<SelectStatement> {
         self.expect_keyword("WITH")?;
-        let recursive = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RECURSIVE") {
+        let recursive = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "RECURSIVE")
+        {
             self.advance();
             true
         } else {
@@ -266,7 +284,8 @@ impl Parser {
 
         self.expect_keyword("AS")?;
 
-        let materialized = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "MATERIALIZED") {
+        let materialized = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "MATERIALIZED")
+        {
             self.advance();
             Some(true)
         } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT") {
@@ -292,7 +311,12 @@ impl Parser {
             self.parse_statement()?
         };
 
-        Ok(CommonTableExpr { name, columns, materialized, query })
+        Ok(CommonTableExpr {
+            name,
+            columns,
+            materialized,
+            query,
+        })
     }
 
     pub(crate) fn parse_select_list(&mut self) -> anyhow::Result<Vec<SelectItem>> {
@@ -315,7 +339,10 @@ impl Parser {
                     SelectItem::ExprAs { expr, alias }
                 } else if matches!(self.peek(), Token::Ident(_)) {
                     let alias = match self.peek().clone() {
-                        Token::Ident(s) => { self.advance(); s }
+                        Token::Ident(s) => {
+                            self.advance();
+                            s
+                        }
                         _ => unreachable!(),
                     };
                     SelectItem::ExprAs { expr, alias }
@@ -342,7 +369,10 @@ impl Parser {
             Some(self.expect_ident()?)
         } else if matches!(self.peek(), Token::Ident(_)) {
             match self.peek().clone() {
-                Token::Ident(s) => { self.advance(); Some(s) }
+                Token::Ident(s) => {
+                    self.advance();
+                    Some(s)
+                }
                 _ => None,
             }
         } else {
@@ -366,18 +396,23 @@ impl Parser {
             let alias = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AS") {
                 self.advance();
                 Some(self.expect_ident()?)
-            } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ON" || k.to_uppercase() == "USING" || k.to_uppercase() == "JOIN" || k.to_uppercase() == "WHERE" || k.to_uppercase() == "GROUP" || k.to_uppercase() == "ORDER" || k.to_uppercase() == "LIMIT" || k.to_uppercase() == "HAVING") {
+            } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ON" || k.to_uppercase() == "USING" || k.to_uppercase() == "JOIN" || k.to_uppercase() == "WHERE" || k.to_uppercase() == "GROUP" || k.to_uppercase() == "ORDER" || k.to_uppercase() == "LIMIT" || k.to_uppercase() == "HAVING")
+            {
                 None
             } else if matches!(self.peek(), Token::Ident(_)) {
                 match self.peek().clone() {
-                    Token::Ident(s) => { self.advance(); Some(s) }
+                    Token::Ident(s) => {
+                        self.advance();
+                        Some(s)
+                    }
                     _ => None,
                 }
             } else {
                 None
             };
 
-            let constraint = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ON") {
+            let constraint = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "ON")
+            {
                 self.advance();
                 JoinConstraint::On(Box::new(self.parse_expr()?))
             } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "USING") {

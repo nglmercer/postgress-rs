@@ -81,7 +81,10 @@ pub fn phraseto_tsquery(text: &str) -> TsQuery {
         return TsQuery::Lexeme(String::new());
     }
 
-    let queries: Vec<TsQuery> = words.iter().map(|w| TsQuery::Lexeme(w.to_string())).collect();
+    let queries: Vec<TsQuery> = words
+        .iter()
+        .map(|w| TsQuery::Lexeme(w.to_string()))
+        .collect();
     TsQuery::phrase(queries, 1)
 }
 

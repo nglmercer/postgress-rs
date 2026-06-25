@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::tsquery::TsQuery;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TsVector {
@@ -39,8 +39,8 @@ impl TsWeight {
 }
 
 const STOP_WORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "in", "on", "at",
-    "to", "for", "of", "and", "or", "but", "not",
+    "the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "to", "for", "of", "and", "or",
+    "but", "not",
 ];
 
 pub fn to_tsvector(text: &str) -> TsVector {
@@ -80,18 +80,10 @@ pub fn ts_match(tsvector: &TsVector, query: &TsQuery) -> bool {
             let lexeme_lower = lexeme.to_lowercase();
             tsvector.lexemes.iter().any(|l| l.text == lexeme_lower)
         }
-        TsQuery::And(left, right) => {
-            ts_match(tsvector, left) && ts_match(tsvector, right)
-        }
-        TsQuery::Or(left, right) => {
-            ts_match(tsvector, left) || ts_match(tsvector, right)
-        }
-        TsQuery::Not(inner) => {
-            !ts_match(tsvector, inner)
-        }
-        TsQuery::Phrase(terms, _distance) => {
-            terms.iter().all(|t| ts_match(tsvector, t))
-        }
+        TsQuery::And(left, right) => ts_match(tsvector, left) && ts_match(tsvector, right),
+        TsQuery::Or(left, right) => ts_match(tsvector, left) || ts_match(tsvector, right),
+        TsQuery::Not(inner) => !ts_match(tsvector, inner),
+        TsQuery::Phrase(terms, _distance) => terms.iter().all(|t| ts_match(tsvector, t)),
     }
 }
 
@@ -99,26 +91,25 @@ pub fn ts_rank(tsvector: &TsVector, query: &TsQuery) -> f32 {
     match query {
         TsQuery::Lexeme(lexeme) => {
             let lexeme_lower = lexeme.to_lowercase();
-            tsvector.lexemes.iter()
+            tsvector
+                .lexemes
+                .iter()
                 .filter(|l| l.text == lexeme_lower)
                 .map(|l| {
-                    l.positions.iter().map(|p| {
-                        match p.weight {
+                    l.positions
+                        .iter()
+                        .map(|p| match p.weight {
                             TsWeight::A => 1.0,
                             TsWeight::B => 0.4,
                             TsWeight::C => 0.2,
                             TsWeight::D => 0.1,
-                        }
-                    }).sum::<f32>()
+                        })
+                        .sum::<f32>()
                 })
                 .sum()
         }
-        TsQuery::And(left, right) => {
-            ts_rank(tsvector, left).min(ts_rank(tsvector, right))
-        }
-        TsQuery::Or(left, right) => {
-            ts_rank(tsvector, left).max(ts_rank(tsvector, right))
-        }
+        TsQuery::And(left, right) => ts_rank(tsvector, left).min(ts_rank(tsvector, right)),
+        TsQuery::Or(left, right) => ts_rank(tsvector, left).max(ts_rank(tsvector, right)),
         TsQuery::Not(_) => 0.0,
         TsQuery::Phrase(terms, _) => {
             terms.iter().map(|t| ts_rank(tsvector, t)).sum::<f32>() / terms.len() as f32

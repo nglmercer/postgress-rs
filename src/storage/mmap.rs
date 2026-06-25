@@ -1,9 +1,9 @@
-use crate::types::PageId;
 use crate::storage::StorageTrait;
+use crate::types::PageId;
+use parking_lot::Mutex;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
-use parking_lot::Mutex;
 
 pub struct MmapStorage {
     file: Mutex<File>,
@@ -22,7 +22,7 @@ impl MmapStorage {
             .create(true)
             .open(path)?;
         file.set_len(1024 * 1024 * 1024)?;
-        
+
         Ok(Self {
             file: Mutex::new(file),
             page_size,

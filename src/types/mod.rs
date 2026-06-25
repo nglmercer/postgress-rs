@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 pub mod jsonb;
-pub mod tsvector;
 pub mod tsquery;
+pub mod tsvector;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct Oid(pub u32);
@@ -91,9 +91,10 @@ impl Relation {
     }
 
     pub fn has_toast_columns(&self) -> bool {
-        self.tuple_desc.fields.iter().any(|attr| {
-            matches!(attr.type_oid.0, 25 | 1043 | 17 | 3802 | 114 | 1009)
-        })
+        self.tuple_desc
+            .fields
+            .iter()
+            .any(|attr| matches!(attr.type_oid.0, 25 | 1043 | 17 | 3802 | 114 | 1009))
     }
 }
 
@@ -124,7 +125,10 @@ mod tests {
 
     #[test]
     fn test_item_pointer_display() {
-        let tip = ItemPointerData { page_id: PageId(3), offset: 7 };
+        let tip = ItemPointerData {
+            page_id: PageId(3),
+            offset: 7,
+        };
         assert_eq!(format!("{}", tip), "(3,7)");
     }
 

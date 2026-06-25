@@ -78,15 +78,24 @@ impl RelationForks {
     }
 
     pub fn main_pages(&self) -> &[PageId] {
-        self.forks.get(&ForkType::Main).map(|f| f.pages.as_slice()).unwrap_or(&[])
+        self.forks
+            .get(&ForkType::Main)
+            .map(|f| f.pages.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn fsm_pages(&self) -> &[PageId] {
-        self.forks.get(&ForkType::Fsm).map(|f| f.pages.as_slice()).unwrap_or(&[])
+        self.forks
+            .get(&ForkType::Fsm)
+            .map(|f| f.pages.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn vm_pages(&self) -> &[PageId] {
-        self.forks.get(&ForkType::Vm).map(|f| f.pages.as_slice()).unwrap_or(&[])
+        self.forks
+            .get(&ForkType::Vm)
+            .map(|f| f.pages.as_slice())
+            .unwrap_or(&[])
     }
 }
 

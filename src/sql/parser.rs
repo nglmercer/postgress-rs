@@ -1,13 +1,13 @@
-mod token;
-mod select;
-mod dml;
-mod ddl;
-mod expr;
 mod data_type;
+mod ddl;
+mod dml;
+mod expr;
+mod select;
+mod token;
 mod transaction;
 
 use crate::sql::ast::*;
-pub(crate) use token::{Token, tokenize};
+pub(crate) use token::{tokenize, Token};
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -82,8 +82,14 @@ impl Parser {
                 "DROP" => self.parse_drop(),
                 "MERGE" => Ok(Statement::Merge(self.parse_merge()?)),
                 "BEGIN" | "START" => Ok(Statement::Begin(self.parse_begin()?)),
-                "COMMIT" => { self.advance(); Ok(Statement::Commit) }
-                "ROLLBACK" | "ABORT" => { self.advance(); Ok(Statement::Rollback) }
+                "COMMIT" => {
+                    self.advance();
+                    Ok(Statement::Commit)
+                }
+                "ROLLBACK" | "ABORT" => {
+                    self.advance();
+                    Ok(Statement::Rollback)
+                }
                 "EXPLAIN" => {
                     self.advance();
                     Ok(Statement::Explain(Box::new(self.parse_statement()?)))

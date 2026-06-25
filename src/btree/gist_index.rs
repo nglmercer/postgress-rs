@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::types::{Oid, PageId};
 
 #[derive(Debug, Clone)]
@@ -11,7 +10,12 @@ pub struct BoundingBox {
 
 impl BoundingBox {
     pub fn new(min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> Self {
-        Self { min_x, min_y, max_x, max_y }
+        Self {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        }
     }
 
     pub fn contains_point(&self, x: f64, y: f64) -> bool {
@@ -19,13 +23,17 @@ impl BoundingBox {
     }
 
     pub fn intersects(&self, other: &BoundingBox) -> bool {
-        self.min_x <= other.max_x && self.max_x >= other.min_x &&
-        self.min_y <= other.max_y && self.max_y >= other.min_y
+        self.min_x <= other.max_x
+            && self.max_x >= other.min_x
+            && self.min_y <= other.max_y
+            && self.max_y >= other.min_y
     }
 
     pub fn contains_box(&self, other: &BoundingBox) -> bool {
-        self.min_x <= other.min_x && self.max_x >= other.max_x &&
-        self.min_y <= other.min_y && self.max_y >= other.max_y
+        self.min_x <= other.min_x
+            && self.max_x >= other.max_x
+            && self.min_y <= other.min_y
+            && self.max_y >= other.max_y
     }
 
     pub fn area(&self) -> f64 {
@@ -42,8 +50,18 @@ pub struct Range<T: PartialOrd> {
 }
 
 impl<T: PartialOrd> Range<T> {
-    pub fn new(lower: Option<T>, upper: Option<T>, lower_inclusive: bool, upper_inclusive: bool) -> Self {
-        Self { lower, upper, lower_inclusive, upper_inclusive }
+    pub fn new(
+        lower: Option<T>,
+        upper: Option<T>,
+        lower_inclusive: bool,
+        upper_inclusive: bool,
+    ) -> Self {
+        Self {
+            lower,
+            upper,
+            lower_inclusive,
+            upper_inclusive,
+        }
     }
 
     pub fn contains(&self, value: &T) -> bool {
@@ -101,9 +119,19 @@ impl<T: PartialOrd> Range<T> {
 
 #[derive(Debug, Clone)]
 pub enum GiSTEntry {
-    Point { x: f64, y: f64, tid: (PageId, u16) },
-    Box { bbox: BoundingBox, tid: (PageId, u16) },
-    Range { range: Range<f64>, tid: (PageId, u16) },
+    Point {
+        x: f64,
+        y: f64,
+        tid: (PageId, u16),
+    },
+    Box {
+        bbox: BoundingBox,
+        tid: (PageId, u16),
+    },
+    Range {
+        range: Range<f64>,
+        tid: (PageId, u16),
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,84 +179,79 @@ impl GiSTIndex {
     }
 
     pub fn query_point(&self, x: f64, y: f64) -> Vec<(PageId, u16)> {
-        self.entries.iter()
-            .filter_map(|entry| {
-                match entry {
-                    GiSTEntry::Point { x: px, y: py, tid } => {
-                        if (*px - x).abs() < f64::EPSILON && (*py - y).abs() < f64::EPSILON {
-                            Some(*tid)
-                        } else {
-                            None
-                        }
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                GiSTEntry::Point { x: px, y: py, tid } => {
+                    if (*px - x).abs() < f64::EPSILON && (*py - y).abs() < f64::EPSILON {
+                        Some(*tid)
+                    } else {
+                        None
                     }
-                    GiSTEntry::Box { bbox, tid } => {
-                        if bbox.contains_point(x, y) {
-                            Some(*tid)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
                 }
+                GiSTEntry::Box { bbox, tid } => {
+                    if bbox.contains_point(x, y) {
+                        Some(*tid)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
             })
             .collect()
     }
 
     pub fn query_bbox(&self, query: &BoundingBox) -> Vec<(PageId, u16)> {
-        self.entries.iter()
-            .filter_map(|entry| {
-                match entry {
-                    GiSTEntry::Point { x, y, tid } => {
-                        if query.contains_point(*x, *y) {
-                            Some(*tid)
-                        } else {
-                            None
-                        }
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                GiSTEntry::Point { x, y, tid } => {
+                    if query.contains_point(*x, *y) {
+                        Some(*tid)
+                    } else {
+                        None
                     }
-                    GiSTEntry::Box { bbox, tid } => {
-                        if bbox.intersects(query) {
-                            Some(*tid)
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
                 }
+                GiSTEntry::Box { bbox, tid } => {
+                    if bbox.intersects(query) {
+                        Some(*tid)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
             })
             .collect()
     }
 
     pub fn query_range(&self, query: &Range<f64>) -> Vec<(PageId, u16)> {
-        self.entries.iter()
-            .filter_map(|entry| {
-                match entry {
-                    GiSTEntry::Range { range, tid } => {
-                        if range.overlaps(query) {
-                            Some(*tid)
-                        } else {
-                            None
-                        }
+        self.entries
+            .iter()
+            .filter_map(|entry| match entry {
+                GiSTEntry::Range { range, tid } => {
+                    if range.overlaps(query) {
+                        Some(*tid)
+                    } else {
+                        None
                     }
-                    GiSTEntry::Point { x, .. } => {
-                        if query.contains(x) {
-                            Some(entry_tid(entry))
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
                 }
+                GiSTEntry::Point { x, .. } => {
+                    if query.contains(x) {
+                        Some(entry_tid(entry))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
             })
             .collect()
     }
 
     pub fn delete(&mut self, tid: &(PageId, u16)) -> bool {
-        if let Some(pos) = self.entries.iter().position(|entry| {
-            match entry {
-                GiSTEntry::Point { tid: t, .. } => t == tid,
-                GiSTEntry::Box { tid: t, .. } => t == tid,
-                GiSTEntry::Range { tid: t, .. } => t == tid,
-            }
+        if let Some(pos) = self.entries.iter().position(|entry| match entry {
+            GiSTEntry::Point { tid: t, .. } => t == tid,
+            GiSTEntry::Box { tid: t, .. } => t == tid,
+            GiSTEntry::Range { tid: t, .. } => t == tid,
         }) {
             self.entries.remove(pos);
             true
@@ -358,8 +381,14 @@ mod tests {
     #[test]
     fn test_gist_query_range() {
         let mut index = GiSTIndex::new(Oid(1), Oid(100), GiSTIndexType::Range);
-        index.insert_range(Range::new(Some(1.0), Some(10.0), true, true), (PageId(1), 0));
-        index.insert_range(Range::new(Some(20.0), Some(30.0), true, true), (PageId(1), 1));
+        index.insert_range(
+            Range::new(Some(1.0), Some(10.0), true, true),
+            (PageId(1), 0),
+        );
+        index.insert_range(
+            Range::new(Some(20.0), Some(30.0), true, true),
+            (PageId(1), 1),
+        );
 
         let query = Range::new(Some(5.0), Some(25.0), true, true);
         let results = index.query_range(&query);

@@ -1,7 +1,7 @@
-use crate::types::Oid;
 use crate::transaction::TransactionId;
-use std::collections::{HashMap, VecDeque};
+use crate::types::Oid;
 use parking_lot::Mutex;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LockMode {
@@ -23,7 +23,13 @@ pub enum LockMode {
 
 impl LockMode {
     pub fn is_table_lock(&self) -> bool {
-        !matches!(self, LockMode::ForUpdate | LockMode::ForShare | LockMode::ForNoKeyUpdate | LockMode::ForKeyShare)
+        !matches!(
+            self,
+            LockMode::ForUpdate
+                | LockMode::ForShare
+                | LockMode::ForNoKeyUpdate
+                | LockMode::ForKeyShare
+        )
     }
 
     pub fn conflicts_with(&self, other: &LockMode) -> bool {
@@ -42,9 +48,12 @@ impl LockMode {
             (RowExclusive, Exclusive) | (Exclusive, RowExclusive) => true,
             (RowExclusive, AccessExclusive) | (AccessExclusive, RowExclusive) => true,
             (ShareUpdateExclusive, Share) | (Share, ShareUpdateExclusive) => true,
-            (ShareUpdateExclusive, ShareRowExclusive) | (ShareRowExclusive, ShareUpdateExclusive) => true,
+            (ShareUpdateExclusive, ShareRowExclusive)
+            | (ShareRowExclusive, ShareUpdateExclusive) => true,
             (ShareUpdateExclusive, Exclusive) | (Exclusive, ShareUpdateExclusive) => true,
-            (ShareUpdateExclusive, AccessExclusive) | (AccessExclusive, ShareUpdateExclusive) => true,
+            (ShareUpdateExclusive, AccessExclusive) | (AccessExclusive, ShareUpdateExclusive) => {
+                true
+            }
             (Share, ShareRowExclusive) | (ShareRowExclusive, Share) => true,
             (Share, Exclusive) | (Exclusive, Share) => true,
             (Share, AccessExclusive) | (AccessExclusive, Share) => true,
@@ -135,7 +144,10 @@ impl LockManager {
                     tuple_offset: None,
                 };
                 self.wait_queue.lock().push_back(request);
-                return Err(anyhow::anyhow!("Lock conflict on relation {:?}", relation_oid));
+                return Err(anyhow::anyhow!(
+                    "Lock conflict on relation {:?}",
+                    relation_oid
+                ));
             }
         }
 
@@ -177,7 +189,11 @@ impl LockManager {
                     tuple_offset: Some(tuple_offset),
                 };
                 self.wait_queue.lock().push_back(request);
-                return Err(anyhow::anyhow!("Row lock conflict on {:?}:{:?}", page_id, tuple_offset));
+                return Err(anyhow::anyhow!(
+                    "Row lock conflict on {:?}:{:?}",
+                    page_id,
+                    tuple_offset
+                ));
             }
         }
 
@@ -185,7 +201,13 @@ impl LockManager {
         Ok(())
     }
 
-    pub fn release_row_lock(&self, xid: TransactionId, relation_oid: Oid, page_id: u32, tuple_offset: u16) {
+    pub fn release_row_lock(
+        &self,
+        xid: TransactionId,
+        relation_oid: Oid,
+        page_id: u32,
+        tuple_offset: u16,
+    ) {
         let mut row_locks = self.row_locks.lock();
         let key = (relation_oid, page_id, tuple_offset);
         if let Some(locks) = row_locks.get_mut(&key) {
@@ -228,7 +250,11 @@ impl LockManager {
 
             if request.page_id.is_some() {
                 // Row lock - check row locks
-                let key = (request.relation_oid, request.page_id.unwrap(), request.tuple_offset.unwrap());
+                let key = (
+                    request.relation_oid,
+                    request.page_id.unwrap(),
+                    request.tuple_offset.unwrap(),
+                );
                 if let Some(locks) = row_locks.get(&key) {
                     for lock in locks {
                         if lock.holder != request.xid && request.mode.conflicts_with(&lock.mode) {
@@ -293,15 +319,22 @@ impl LockManager {
 
     pub fn table_lock_holders(&self, relation_oid: Oid) -> Vec<(TransactionId, LockMode)> {
         let table_locks = self.table_locks.lock();
-        table_locks.get(&relation_oid)
+        table_locks
+            .get(&relation_oid)
             .map(|locks| locks.iter().map(|l| (l.holder, l.mode)).collect())
             .unwrap_or_default()
     }
 
-    pub fn row_lock_holders(&self, relation_oid: Oid, page_id: u32, tuple_offset: u16) -> Vec<(TransactionId, LockMode)> {
+    pub fn row_lock_holders(
+        &self,
+        relation_oid: Oid,
+        page_id: u32,
+        tuple_offset: u16,
+    ) -> Vec<(TransactionId, LockMode)> {
         let row_locks = self.row_locks.lock();
         let key = (relation_oid, page_id, tuple_offset);
-        row_locks.get(&key)
+        row_locks
+            .get(&key)
             .map(|locks| locks.iter().map(|l| (l.holder, l.mode)).collect())
             .unwrap_or_default()
     }
@@ -332,14 +365,15 @@ impl LockManager {
                 continue; // Re-entrant lock by the same xid is fine.
             }
             let conflicts = match (mode, entry.mode) {
-                (AdvisoryLockMode::Exclusive, _) => true,        // Exclusive blocks everyone.
-                (AdvisoryLockMode::Shared, AdvisoryLockMode::Exclusive) => true,  // Shared blocks exclusive.
-                (AdvisoryLockMode::Shared, AdvisoryLockMode::Shared) => false,    // Shared + Shared OK.
+                (AdvisoryLockMode::Exclusive, _) => true, // Exclusive blocks everyone.
+                (AdvisoryLockMode::Shared, AdvisoryLockMode::Exclusive) => true, // Shared blocks exclusive.
+                (AdvisoryLockMode::Shared, AdvisoryLockMode::Shared) => false, // Shared + Shared OK.
             };
             if conflicts {
                 return Err(anyhow::anyhow!(
                     "Advisory lock conflict on key {} (mode {:?})",
-                    key, mode
+                    key,
+                    mode
                 ));
             }
         }
@@ -362,11 +396,7 @@ impl LockManager {
     /// Release one advisory lock on `key` held by `xid`.
     /// If the same xid acquired the lock multiple times, only one entry is removed.
     /// Returns `true` if a lock was found and removed.
-    pub fn release_advisory_lock(
-        &self,
-        xid: TransactionId,
-        key: i64,
-    ) -> bool {
+    pub fn release_advisory_lock(&self, xid: TransactionId, key: i64) -> bool {
         let mut advisory = self.advisory_locks.lock();
         if let Some(entries) = advisory.get_mut(&key) {
             if let Some(pos) = entries.iter().position(|e| e.holder == xid) {
@@ -419,13 +449,19 @@ mod tests {
         let rel_oid = Oid(100);
 
         // First lock should succeed
-        assert!(mgr.acquire_table_lock(xid1, rel_oid, LockMode::AccessShare).is_ok());
+        assert!(mgr
+            .acquire_table_lock(xid1, rel_oid, LockMode::AccessShare)
+            .is_ok());
 
         // Conflicting lock should fail
-        assert!(mgr.acquire_table_lock(xid2, rel_oid, LockMode::Exclusive).is_err());
+        assert!(mgr
+            .acquire_table_lock(xid2, rel_oid, LockMode::Exclusive)
+            .is_err());
 
         // Non-conflicting lock should succeed
-        assert!(mgr.acquire_table_lock(xid2, rel_oid, LockMode::AccessShare).is_ok());
+        assert!(mgr
+            .acquire_table_lock(xid2, rel_oid, LockMode::AccessShare)
+            .is_ok());
     }
 
     #[test]
@@ -434,7 +470,8 @@ mod tests {
         let xid = TransactionId(1);
         let rel_oid = Oid(100);
 
-        mgr.acquire_table_lock(xid, rel_oid, LockMode::AccessShare).unwrap();
+        mgr.acquire_table_lock(xid, rel_oid, LockMode::AccessShare)
+            .unwrap();
         assert_eq!(mgr.table_lock_holders(rel_oid).len(), 1);
 
         mgr.release_table_lock(xid, rel_oid);
@@ -449,12 +486,20 @@ mod tests {
         let rel_oid = Oid(100);
 
         // ForUpdate conflicts with ForUpdate
-        assert!(mgr.acquire_row_lock(xid1, rel_oid, 1, 0, LockMode::ForUpdate).is_ok());
-        assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForUpdate).is_err());
+        assert!(mgr
+            .acquire_row_lock(xid1, rel_oid, 1, 0, LockMode::ForUpdate)
+            .is_ok());
+        assert!(mgr
+            .acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForUpdate)
+            .is_err());
         // ForUpdate conflicts with ForKeyShare
-        assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForKeyShare).is_err());
+        assert!(mgr
+            .acquire_row_lock(xid2, rel_oid, 1, 0, LockMode::ForKeyShare)
+            .is_err());
         // Different row should not conflict
-        assert!(mgr.acquire_row_lock(xid2, rel_oid, 1, 1, LockMode::ForUpdate).is_ok());
+        assert!(mgr
+            .acquire_row_lock(xid2, rel_oid, 1, 1, LockMode::ForUpdate)
+            .is_ok());
     }
 
     #[test]
@@ -462,9 +507,12 @@ mod tests {
         let mgr = LockManager::new();
         let xid = TransactionId(1);
 
-        mgr.acquire_table_lock(xid, Oid(1), LockMode::AccessShare).unwrap();
-        mgr.acquire_table_lock(xid, Oid(2), LockMode::RowShare).unwrap();
-        mgr.acquire_row_lock(xid, Oid(1), 1, 0, LockMode::ForUpdate).unwrap();
+        mgr.acquire_table_lock(xid, Oid(1), LockMode::AccessShare)
+            .unwrap();
+        mgr.acquire_table_lock(xid, Oid(2), LockMode::RowShare)
+            .unwrap();
+        mgr.acquire_row_lock(xid, Oid(1), 1, 0, LockMode::ForUpdate)
+            .unwrap();
 
         mgr.release_all_locks(xid);
 
@@ -483,9 +531,13 @@ mod tests {
         let xid1 = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        assert!(mgr.acquire_advisory_lock(xid1, 42, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid1, 42, AdvisoryLockMode::Exclusive)
+            .is_ok());
         // Second xid must not get exclusive on the same key.
-        assert!(mgr.acquire_advisory_lock(xid2, 42, AdvisoryLockMode::Exclusive).is_err());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 42, AdvisoryLockMode::Exclusive)
+            .is_err());
     }
 
     #[test]
@@ -494,9 +546,13 @@ mod tests {
         let xid1 = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        assert!(mgr.acquire_advisory_lock(xid1, 99, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid1, 99, AdvisoryLockMode::Exclusive)
+            .is_ok());
         // Shared must not be granted while exclusive holder exists.
-        assert!(mgr.acquire_advisory_lock(xid2, 99, AdvisoryLockMode::Shared).is_err());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 99, AdvisoryLockMode::Shared)
+            .is_err());
     }
 
     #[test]
@@ -505,9 +561,13 @@ mod tests {
         let xid1 = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        assert!(mgr.acquire_advisory_lock(xid1, 7, AdvisoryLockMode::Shared).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid1, 7, AdvisoryLockMode::Shared)
+            .is_ok());
         // Another shared holder on the same key should succeed.
-        assert!(mgr.acquire_advisory_lock(xid2, 7, AdvisoryLockMode::Shared).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 7, AdvisoryLockMode::Shared)
+            .is_ok());
         assert_eq!(mgr.advisory_lock_holders(7).len(), 2);
     }
 
@@ -517,9 +577,13 @@ mod tests {
         let xid1 = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        assert!(mgr.acquire_advisory_lock(xid1, 7, AdvisoryLockMode::Shared).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid1, 7, AdvisoryLockMode::Shared)
+            .is_ok());
         // Exclusive must be blocked by existing shared holder.
-        assert!(mgr.acquire_advisory_lock(xid2, 7, AdvisoryLockMode::Exclusive).is_err());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 7, AdvisoryLockMode::Exclusive)
+            .is_err());
     }
 
     #[test]
@@ -528,8 +592,12 @@ mod tests {
         let xid = TransactionId(1);
 
         // The same transaction may acquire the same key multiple times (re-entrancy).
-        assert!(mgr.acquire_advisory_lock(xid, 55, AdvisoryLockMode::Exclusive).is_ok());
-        assert!(mgr.acquire_advisory_lock(xid, 55, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid, 55, AdvisoryLockMode::Exclusive)
+            .is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid, 55, AdvisoryLockMode::Exclusive)
+            .is_ok());
         assert_eq!(mgr.advisory_lock_holders(55).len(), 2);
     }
 
@@ -539,9 +607,13 @@ mod tests {
         let xid1 = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        assert!(mgr.acquire_advisory_lock(xid1, 1, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid1, 1, AdvisoryLockMode::Exclusive)
+            .is_ok());
         // A completely different key must not be affected.
-        assert!(mgr.acquire_advisory_lock(xid2, 2, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 2, AdvisoryLockMode::Exclusive)
+            .is_ok());
     }
 
     #[test]
@@ -561,12 +633,17 @@ mod tests {
         let xid1 = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        mgr.acquire_advisory_lock(xid1, 20, AdvisoryLockMode::Exclusive).unwrap();
-        assert!(mgr.acquire_advisory_lock(xid2, 20, AdvisoryLockMode::Exclusive).is_err());
+        mgr.acquire_advisory_lock(xid1, 20, AdvisoryLockMode::Exclusive)
+            .unwrap();
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 20, AdvisoryLockMode::Exclusive)
+            .is_err());
 
         // After release the key should be available.
         assert!(mgr.release_advisory_lock(xid1, 20));
-        assert!(mgr.acquire_advisory_lock(xid2, 20, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 20, AdvisoryLockMode::Exclusive)
+            .is_ok());
     }
 
     #[test]
@@ -583,14 +660,18 @@ mod tests {
         let xid = TransactionId(1);
         let xid2 = TransactionId(2);
 
-        mgr.acquire_advisory_lock(xid, 100, AdvisoryLockMode::Exclusive).unwrap();
-        mgr.acquire_advisory_lock(xid, 200, AdvisoryLockMode::Shared).unwrap();
+        mgr.acquire_advisory_lock(xid, 100, AdvisoryLockMode::Exclusive)
+            .unwrap();
+        mgr.acquire_advisory_lock(xid, 200, AdvisoryLockMode::Shared)
+            .unwrap();
 
         mgr.release_all_advisory_locks(xid);
 
         assert!(mgr.advisory_lock_holders(100).is_empty());
         assert!(mgr.advisory_lock_holders(200).is_empty());
         // After release another xid should be free to lock.
-        assert!(mgr.acquire_advisory_lock(xid2, 100, AdvisoryLockMode::Exclusive).is_ok());
+        assert!(mgr
+            .acquire_advisory_lock(xid2, 100, AdvisoryLockMode::Exclusive)
+            .is_ok());
     }
 }

@@ -1,7 +1,7 @@
+use super::context::ExecContext;
+use crate::executor::select::Row;
 use crate::sql::ast::*;
 use crate::types::*;
-use crate::executor::select::Row;
-use super::context::ExecContext;
 
 impl<'a> ExecContext<'a> {
     pub fn materialize(
@@ -23,9 +23,9 @@ impl<'a> ExecContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::ephemeral::EphemeralStorage;
     use crate::buffer_cache::SharedBufferCache;
     use crate::catalog::Catalog;
+    use crate::storage::ephemeral::EphemeralStorage;
     use std::sync::Arc;
 
     fn make_row(values: &[&str]) -> Row {
@@ -45,9 +45,27 @@ mod tests {
         let ctx = ExecContext::new(&cache, &catalog);
 
         let rows = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "Charlie"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["3", "Charlie"]),
+            ),
         ];
 
         let result = ctx.materialize(rows.clone()).unwrap();
@@ -73,9 +91,27 @@ mod tests {
         let ctx = ExecContext::new(&cache, &catalog);
 
         let rows = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "Charlie"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["3", "Charlie"]),
+            ),
         ];
 
         let result = ctx.materialize_with_limit(rows, 2).unwrap();
@@ -89,9 +125,13 @@ mod tests {
         let (cache, catalog) = setup();
         let ctx = ExecContext::new(&cache, &catalog);
 
-        let rows = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-        ];
+        let rows = vec![(
+            ItemPointerData {
+                page_id: PageId(1),
+                offset: 0,
+            },
+            make_row(&["1", "Alice"]),
+        )];
 
         let result = ctx.materialize_with_limit(rows, 100).unwrap();
         assert_eq!(result.len(), 1);

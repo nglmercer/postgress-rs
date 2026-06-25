@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone)]
 pub enum Message {
     StartupMessage {
@@ -48,7 +47,9 @@ impl Message {
             }
 
             let msg_type = data[pos];
-            let length = i32::from_be_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]) as usize;
+            let length =
+                i32::from_be_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]])
+                    as usize;
 
             if length < 4 || pos + 1 + length > data.len() {
                 break;
@@ -116,7 +117,8 @@ impl Message {
                             cursor += len as usize;
                         }
                     }
-                    let num_result_formats = u16::from_be_bytes([body[cursor], body[cursor + 1]]) as usize;
+                    let num_result_formats =
+                        u16::from_be_bytes([body[cursor], body[cursor + 1]]) as usize;
                     cursor += 2;
                     let mut result_formats = Vec::new();
                     for _ in 0..num_result_formats {

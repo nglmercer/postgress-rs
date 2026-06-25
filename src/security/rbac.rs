@@ -102,13 +102,27 @@ impl PrivilegeSet {
     }
 
     pub fn check(&self, required: &PrivilegeSet) -> bool {
-        if required.select && !self.select { return false; }
-        if required.insert && !self.insert { return false; }
-        if required.update && !self.update { return false; }
-        if required.delete && !self.delete { return false; }
-        if required.truncate && !self.truncate { return false; }
-        if required.references && !self.references { return false; }
-        if required.trigger && !self.trigger { return false; }
+        if required.select && !self.select {
+            return false;
+        }
+        if required.insert && !self.insert {
+            return false;
+        }
+        if required.update && !self.update {
+            return false;
+        }
+        if required.delete && !self.delete {
+            return false;
+        }
+        if required.truncate && !self.truncate {
+            return false;
+        }
+        if required.references && !self.references {
+            return false;
+        }
+        if required.trigger && !self.trigger {
+            return false;
+        }
         true
     }
 }
@@ -123,7 +137,12 @@ pub struct AccessControlList {
 
 impl AccessControlList {
     pub fn new(grantee: Oid, grantor: Oid, rel_oid: Oid, privileges: PrivilegeSet) -> Self {
-        Self { grantee, grantor, rel_oid, privileges }
+        Self {
+            grantee,
+            grantor,
+            rel_oid,
+            privileges,
+        }
     }
 
     pub fn check(&self, required: &PrivilegeSet) -> bool {
@@ -146,7 +165,10 @@ impl RbacManager {
             r
         });
 
-        Self { roles, acls: Vec::new() }
+        Self {
+            roles,
+            acls: Vec::new(),
+        }
     }
 
     pub fn create_role(&mut self, role: Role) -> anyhow::Result<()> {
@@ -161,7 +183,9 @@ impl RbacManager {
         if name == ROLE_POSTGRES {
             anyhow::bail!("cannot drop role postgres");
         }
-        self.roles.remove(name).ok_or_else(|| anyhow::anyhow!("role \"{}\" does not exist", name))?;
+        self.roles
+            .remove(name)
+            .ok_or_else(|| anyhow::anyhow!("role \"{}\" does not exist", name))?;
         Ok(())
     }
 
@@ -179,9 +203,8 @@ impl RbacManager {
     }
 
     pub fn revoke(&mut self, grantee: Oid, rel_oid: Oid, privileges: &PrivilegeSet) {
-        self.acls.retain(|acl| {
-            acl.grantee != grantee || acl.rel_oid != rel_oid
-        });
+        self.acls
+            .retain(|acl| acl.grantee != grantee || acl.rel_oid != rel_oid);
     }
 
     pub fn check_privilege(&self, role_oid: Oid, rel_oid: Oid, required: &PrivilegeSet) -> bool {
@@ -191,7 +214,8 @@ impl RbacManager {
             }
         }
 
-        self.acls.iter()
+        self.acls
+            .iter()
             .filter(|acl| acl.grantee == role_oid && acl.rel_oid == rel_oid)
             .any(|acl| acl.check(required))
     }

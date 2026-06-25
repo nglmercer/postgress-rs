@@ -1,11 +1,11 @@
-use crate::server;
 use crate::buffer_cache::SharedBufferCache;
 use crate::catalog::Catalog;
+use crate::server;
 use crate::storage::ephemeral::EphemeralStorage;
 use crate::transaction::TransactionManager;
 use crate::wal::WAL;
-use std::sync::Arc;
 use clap::Parser;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 
 pub struct SuiteShell;
@@ -45,7 +45,9 @@ impl SuiteShell {
             let txn_mgr = txn_mgr.clone();
             let lock_mgr = lock_mgr.clone();
             tokio::spawn(async move {
-                if let Err(e) = server::handle_connection(socket, cache, catalog, wal, txn_mgr, lock_mgr).await {
+                if let Err(e) =
+                    server::handle_connection(socket, cache, catalog, wal, txn_mgr, lock_mgr).await
+                {
                     tracing::error!("connection error: {}", e);
                 }
             });

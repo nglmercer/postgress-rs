@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::types::{Oid, PageId};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct HashIndexEntry {
@@ -62,7 +62,8 @@ impl HashIndex {
     }
 
     pub fn scan(&self) -> Vec<HashIndexEntry> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .map(|(&hash, tids)| HashIndexEntry {
                 hash_value: hash,
                 tids: tids.clone(),
@@ -170,8 +171,7 @@ mod tests {
 
     #[test]
     fn test_with_bucket_count() {
-        let index = HashIndex::new(Oid(1), Oid(100))
-            .with_bucket_count(1024);
+        let index = HashIndex::new(Oid(1), Oid(100)).with_bucket_count(1024);
         assert_eq!(index.bucket_count, 1024);
     }
 }

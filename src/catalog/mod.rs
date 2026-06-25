@@ -1,11 +1,11 @@
 pub mod statistics;
 
-use crate::types::{Oid, PageId, Relation};
-use crate::storage::StorageTrait;
 use crate::buffer_cache::SharedBufferCache;
+use crate::storage::StorageTrait;
+use crate::types::{Oid, PageId, Relation};
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 #[derive(Debug, Clone)]
 pub struct IndexInfo {
@@ -85,7 +85,12 @@ impl Catalog {
         Ok(rels.values().find(|r| r.name == name).cloned())
     }
 
-    pub async fn create_index(&self, name: &str, rel_oid: Oid, column_name: String) -> anyhow::Result<()> {
+    pub async fn create_index(
+        &self,
+        name: &str,
+        rel_oid: Oid,
+        column_name: String,
+    ) -> anyhow::Result<()> {
         let index_oid = self.allocate_oid();
         let info = IndexInfo {
             index_oid,
@@ -107,17 +112,17 @@ impl Catalog {
 
     pub fn find_index(&self, rel_oid: Oid, column_name: &str) -> Option<IndexInfo> {
         let indexes = self.indexes.read();
-        indexes.iter()
+        indexes
+            .iter()
             .find(|i| i.rel_oid == rel_oid && i.column_name == column_name)
             .cloned()
     }
 
     pub async fn bootstrap(&self) -> anyhow::Result<()> {
-        let pg_class = Relation::empty("pg_class", vec![
-            ("oid", Oid(0)),
-            ("relname", Oid(0)),
-            ("relpages", Oid(0)),
-        ]);
+        let pg_class = Relation::empty(
+            "pg_class",
+            vec![("oid", Oid(0)), ("relname", Oid(0)), ("relpages", Oid(0))],
+        );
         let pg_class = Relation {
             rel_oid: Oid(1259),
             name: pg_class.name,
@@ -129,13 +134,16 @@ impl Catalog {
         };
         self.create_relation(pg_class).await?;
 
-        let pg_attribute = Relation::empty("pg_attribute", vec![
-            ("attrelid", Oid(0)),
-            ("attname", Oid(0)),
-            ("atttypid", Oid(0)),
-            ("attnum", Oid(0)),
-            ("attlen", Oid(0)),
-        ]);
+        let pg_attribute = Relation::empty(
+            "pg_attribute",
+            vec![
+                ("attrelid", Oid(0)),
+                ("attname", Oid(0)),
+                ("atttypid", Oid(0)),
+                ("attnum", Oid(0)),
+                ("attlen", Oid(0)),
+            ],
+        );
         let pg_attribute = Relation {
             rel_oid: Oid(1249),
             name: pg_attribute.name,
@@ -147,11 +155,10 @@ impl Catalog {
         };
         self.create_relation(pg_attribute).await?;
 
-        let pg_type = Relation::empty("pg_type", vec![
-            ("oid", Oid(0)),
-            ("typname", Oid(0)),
-            ("typtype", Oid(0)),
-        ]);
+        let pg_type = Relation::empty(
+            "pg_type",
+            vec![("oid", Oid(0)), ("typname", Oid(0)), ("typtype", Oid(0))],
+        );
         let pg_type = Relation {
             rel_oid: Oid(1247),
             name: pg_type.name,
@@ -163,11 +170,14 @@ impl Catalog {
         };
         self.create_relation(pg_type).await?;
 
-        let pg_index = Relation::empty("pg_index", vec![
-            ("indexrelid", Oid(0)),
-            ("indrelid", Oid(0)),
-            ("indnatts", Oid(0)),
-        ]);
+        let pg_index = Relation::empty(
+            "pg_index",
+            vec![
+                ("indexrelid", Oid(0)),
+                ("indrelid", Oid(0)),
+                ("indnatts", Oid(0)),
+            ],
+        );
         let pg_index = Relation {
             rel_oid: Oid(1250),
             name: pg_index.name,

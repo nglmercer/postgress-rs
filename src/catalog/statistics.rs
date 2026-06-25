@@ -31,7 +31,12 @@ impl StatisticsCollector {
         }
     }
 
-    pub fn collect_table_stats(&mut self, table_oid: Oid, rows: &[(Vec<String>, bool)], column_names: &[String]) {
+    pub fn collect_table_stats(
+        &mut self,
+        table_oid: Oid,
+        rows: &[(Vec<String>, bool)],
+        column_names: &[String],
+    ) {
         let visible_rows = rows.iter().filter(|(_, v)| *v).count() as f64;
         let mut columns = HashMap::new();
 
@@ -74,7 +79,8 @@ impl StatisticsCollector {
                 0.0
             };
 
-            let mut mcv_freq: Vec<f32> = value_counts.values()
+            let mut mcv_freq: Vec<f32> = value_counts
+                .values()
                 .map(|&count| count as f32 / visible_rows as f32)
                 .filter(|&f| f > 0.01)
                 .collect();
@@ -83,26 +89,36 @@ impl StatisticsCollector {
 
             let mut bounds: Vec<String> = distinct_values.into_iter().collect();
             bounds.sort();
-            let step = if bounds.len() > 1 { bounds.len() / 10 } else { 1 };
+            let step = if bounds.len() > 1 {
+                bounds.len() / 10
+            } else {
+                1
+            };
             let histogram: Vec<String> = bounds.into_iter().step_by(step.max(1)).collect();
 
-            columns.insert(col_name.clone(), ColumnStatistics {
-                table_oid,
-                column_name: col_name.clone(),
-                null_fraction,
-                average_width,
-                distinct_values: distinct,
-                mcv_frequency: mcv_freq,
-                histogram_bounds: histogram,
-            });
+            columns.insert(
+                col_name.clone(),
+                ColumnStatistics {
+                    table_oid,
+                    column_name: col_name.clone(),
+                    null_fraction,
+                    average_width,
+                    distinct_values: distinct,
+                    mcv_frequency: mcv_freq,
+                    histogram_bounds: histogram,
+                },
+            );
         }
 
-        self.tables.insert(table_oid, TableStatistics {
+        self.tables.insert(
             table_oid,
-            row_count: visible_rows as u64,
-            page_count: 0,
-            columns,
-        });
+            TableStatistics {
+                table_oid,
+                row_count: visible_rows as u64,
+                page_count: 0,
+                columns,
+            },
+        );
     }
 
     pub fn get_table_stats(&self, table_oid: Oid) -> Option<&TableStatistics> {
@@ -110,11 +126,16 @@ impl StatisticsCollector {
     }
 
     pub fn get_column_stats(&self, table_oid: Oid, column_name: &str) -> Option<&ColumnStatistics> {
-        self.tables.get(&table_oid)?
-            .columns.get(column_name)
+        self.tables.get(&table_oid)?.columns.get(column_name)
     }
 
-    pub fn estimate_selectivity(&self, table_oid: Oid, column_name: &str, op: &str, value: &str) -> f64 {
+    pub fn estimate_selectivity(
+        &self,
+        table_oid: Oid,
+        column_name: &str,
+        op: &str,
+        value: &str,
+    ) -> f64 {
         if let Some(stats) = self.get_column_stats(table_oid, column_name) {
             match op {
                 "=" | "==" => {

@@ -1,5 +1,7 @@
+use postgress_rs::protocol::backend::{
+    encode, BackendMessage, ErrorField, FieldDescription, TransactionStatus,
+};
 use postgress_rs::protocol::frontend::Message;
-use postgress_rs::protocol::backend::{BackendMessage, TransactionStatus, FieldDescription, ErrorField, encode};
 use postgress_rs::types::Oid;
 
 fn make_frontend_msg(msg_type: u8, body: &[u8]) -> Vec<u8> {
@@ -122,7 +124,11 @@ fn test_decode_parse_message() {
     let messages = Message::decode(&data).unwrap();
     assert_eq!(messages.len(), 1);
     match &messages[0] {
-        Message::Parse { name, sql, parameter_types } => {
+        Message::Parse {
+            name,
+            sql,
+            parameter_types,
+        } => {
             assert_eq!(name, "stmt1");
             assert_eq!(sql, "SELECT 1");
             assert_eq!(parameter_types, &vec![23, 25]);
@@ -149,7 +155,13 @@ fn test_decode_bind_message() {
     let messages = Message::decode(&data).unwrap();
     assert_eq!(messages.len(), 1);
     match &messages[0] {
-        Message::Bind { portal, statement, parameter_formats, parameter_values, result_formats } => {
+        Message::Bind {
+            portal,
+            statement,
+            parameter_formats,
+            parameter_values,
+            result_formats,
+        } => {
             assert_eq!(portal, "p1");
             assert_eq!(statement, "s1");
             assert_eq!(parameter_formats, &vec![0]);
@@ -176,7 +188,9 @@ fn test_decode_bind_null_values() {
     let data = make_frontend_msg(b'B', &body);
     let messages = Message::decode(&data).unwrap();
     match &messages[0] {
-        Message::Bind { parameter_values, .. } => {
+        Message::Bind {
+            parameter_values, ..
+        } => {
             assert_eq!(parameter_values.len(), 2);
             assert_eq!(parameter_values[0], None);
             assert_eq!(parameter_values[1].as_deref(), Some(b"hello".as_ref()));
@@ -230,7 +244,10 @@ fn test_encode_auth_ok() {
     let encoded = BackendMessage::AuthenticationOk.encode();
     assert_eq!(encoded[0], b'R');
     assert_eq!(encoded.len(), 9);
-    assert_eq!(i32::from_be_bytes([encoded[5], encoded[6], encoded[7], encoded[8]]), 0);
+    assert_eq!(
+        i32::from_be_bytes([encoded[5], encoded[6], encoded[7], encoded[8]]),
+        0
+    );
 }
 
 #[test]
@@ -247,7 +264,10 @@ fn test_encode_parameter_status() {
 
 #[test]
 fn test_encode_backend_key_data() {
-    let msg = BackendMessage::BackendKeyData { pid: 12345, secret: 67890 };
+    let msg = BackendMessage::BackendKeyData {
+        pid: 12345,
+        secret: 67890,
+    };
     let encoded = msg.encode();
     assert_eq!(encoded[0], b'K');
     assert_eq!(encoded.len(), 13);
@@ -259,7 +279,9 @@ fn test_encode_backend_key_data() {
 
 #[test]
 fn test_encode_ready_for_query() {
-    let msg = BackendMessage::ReadyForQuery { status: TransactionStatus::Idle };
+    let msg = BackendMessage::ReadyForQuery {
+        status: TransactionStatus::Idle,
+    };
     let encoded = msg.encode();
     assert_eq!(encoded[0], b'Z');
     assert_eq!(encoded.len(), 6);
@@ -308,7 +330,9 @@ fn test_encode_data_row_empty() {
 
 #[test]
 fn test_encode_command_complete() {
-    let msg = BackendMessage::CommandComplete { tag: "INSERT 0 1".to_string() };
+    let msg = BackendMessage::CommandComplete {
+        tag: "INSERT 0 1".to_string(),
+    };
     let encoded = msg.encode();
     assert_eq!(encoded[0], b'C');
     let body = String::from_utf8_lossy(&encoded[5..encoded.len() - 1]);
@@ -319,8 +343,14 @@ fn test_encode_command_complete() {
 fn test_encode_error_response() {
     let msg = BackendMessage::ErrorResponse {
         fields: vec![
-            ErrorField { field_type: b'S', value: "ERROR".to_string() },
-            ErrorField { field_type: b'M', value: "relation does not exist".to_string() },
+            ErrorField {
+                field_type: b'S',
+                value: "ERROR".to_string(),
+            },
+            ErrorField {
+                field_type: b'M',
+                value: "relation does not exist".to_string(),
+            },
         ],
     };
     let encoded = msg.encode();
@@ -331,8 +361,14 @@ fn test_encode_error_response() {
 fn test_encode_notice_response() {
     let msg = BackendMessage::NoticeResponse {
         fields: vec![
-            ErrorField { field_type: b'S', value: "NOTICE".to_string() },
-            ErrorField { field_type: b'M', value: "table created".to_string() },
+            ErrorField {
+                field_type: b'S',
+                value: "NOTICE".to_string(),
+            },
+            ErrorField {
+                field_type: b'M',
+                value: "table created".to_string(),
+            },
         ],
     };
     let encoded = msg.encode();
@@ -341,17 +377,26 @@ fn test_encode_notice_response() {
 
 #[test]
 fn test_encode_parse_complete() {
-    assert_eq!(BackendMessage::ParseComplete.encode(), vec![b'1', 0, 0, 0, 4]);
+    assert_eq!(
+        BackendMessage::ParseComplete.encode(),
+        vec![b'1', 0, 0, 0, 4]
+    );
 }
 
 #[test]
 fn test_encode_bind_complete() {
-    assert_eq!(BackendMessage::BindComplete.encode(), vec![b'2', 0, 0, 0, 4]);
+    assert_eq!(
+        BackendMessage::BindComplete.encode(),
+        vec![b'2', 0, 0, 0, 4]
+    );
 }
 
 #[test]
 fn test_encode_close_complete() {
-    assert_eq!(BackendMessage::CloseComplete.encode(), vec![b'3', 0, 0, 0, 4]);
+    assert_eq!(
+        BackendMessage::CloseComplete.encode(),
+        vec![b'3', 0, 0, 0, 4]
+    );
 }
 
 #[test]
@@ -369,7 +414,9 @@ fn test_encode_row_description_empty() {
 
 #[test]
 fn test_encode_parameter_description() {
-    let msg = BackendMessage::ParameterDescription { types: vec![23, 25, 16] };
+    let msg = BackendMessage::ParameterDescription {
+        types: vec![23, 25, 16],
+    };
     let encoded = msg.encode();
     assert_eq!(encoded[0], b't');
     let param_count = i16::from_be_bytes([encoded[5], encoded[6]]);
@@ -380,7 +427,9 @@ fn test_encode_parameter_description() {
 fn test_encode_multiple_messages() {
     let messages = vec![
         BackendMessage::AuthenticationOk,
-        BackendMessage::ReadyForQuery { status: TransactionStatus::Idle },
+        BackendMessage::ReadyForQuery {
+            status: TransactionStatus::Idle,
+        },
     ];
     let encoded = encode(&messages);
     assert_eq!(encoded[0], b'R');

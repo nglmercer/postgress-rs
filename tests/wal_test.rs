@@ -1,5 +1,5 @@
-use postgress_rs::wal::{WAL, WALRecord};
 use postgress_rs::types::{Oid, PageId, Tuple};
+use postgress_rs::wal::{WALRecord, WAL};
 
 #[tokio::test]
 async fn test_wal_allocate_xid() {

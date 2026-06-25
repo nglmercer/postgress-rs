@@ -1,7 +1,7 @@
+use super::context::ExecContext;
+use crate::executor::select::Row;
 use crate::sql::ast::*;
 use crate::types::*;
-use crate::executor::select::Row;
-use super::context::ExecContext;
 use std::collections::HashMap;
 
 impl<'a> ExecContext<'a> {
@@ -24,13 +24,24 @@ impl<'a> ExecContext<'a> {
     fn expr_has_agg(expr: &Expr) -> bool {
         match expr {
             Expr::Function(f) => {
-                let name = f.name.parts.last().map(|s| s.to_uppercase()).unwrap_or_default();
+                let name = f
+                    .name
+                    .parts
+                    .last()
+                    .map(|s| s.to_uppercase())
+                    .unwrap_or_default();
                 matches!(name.as_str(), "COUNT" | "SUM" | "AVG" | "MIN" | "MAX")
             }
-            Expr::BinaryOp { left, right, .. } => Self::expr_has_agg(left) || Self::expr_has_agg(right),
+            Expr::BinaryOp { left, right, .. } => {
+                Self::expr_has_agg(left) || Self::expr_has_agg(right)
+            }
             Expr::UnaryOp { expr, .. } => Self::expr_has_agg(expr),
-            Expr::Between { expr, low, high, .. } => Self::expr_has_agg(expr) || Self::expr_has_agg(low) || Self::expr_has_agg(high),
-            Expr::InList { expr, list, .. } => Self::expr_has_agg(expr) || list.iter().any(|e| Self::expr_has_agg(e)),
+            Expr::Between {
+                expr, low, high, ..
+            } => Self::expr_has_agg(expr) || Self::expr_has_agg(low) || Self::expr_has_agg(high),
+            Expr::InList { expr, list, .. } => {
+                Self::expr_has_agg(expr) || list.iter().any(|e| Self::expr_has_agg(e))
+            }
             _ => false,
         }
     }
@@ -73,10 +84,13 @@ impl<'a> ExecContext<'a> {
             let key: Vec<String> = if group_by.is_empty() {
                 vec!["__all__".to_string()]
             } else {
-                group_by.iter().map(|gb| {
-                    crate::server::evaluate_expr(gb, row, self.tuple_desc.as_ref())
-                        .unwrap_or_default()
-                }).collect()
+                group_by
+                    .iter()
+                    .map(|gb| {
+                        crate::server::evaluate_expr(gb, row, self.tuple_desc.as_ref())
+                            .unwrap_or_default()
+                    })
+                    .collect()
             };
             groups.entry(key).or_default().push(row.clone());
         }
@@ -88,7 +102,10 @@ impl<'a> ExecContext<'a> {
                 let val = self.evaluate_select_item_with_group(item, &group_rows);
                 result_row.push(val);
             }
-            let tid = ItemPointerData { page_id: PageId(0), offset: 0 };
+            let tid = ItemPointerData {
+                page_id: PageId(0),
+                offset: 0,
+            };
             result.push((tid, result_row));
         }
 
@@ -115,10 +132,13 @@ impl<'a> ExecContext<'a> {
             let key: Vec<String> = if group_by.is_empty() {
                 vec!["__all__".to_string()]
             } else {
-                group_by.iter().map(|gb| {
-                    crate::server::evaluate_expr(gb, row, self.tuple_desc.as_ref())
-                        .unwrap_or_default()
-                }).collect()
+                group_by
+                    .iter()
+                    .map(|gb| {
+                        crate::server::evaluate_expr(gb, row, self.tuple_desc.as_ref())
+                            .unwrap_or_default()
+                    })
+                    .collect()
             };
             groups.entry(key).or_default().push(row.clone());
         }
@@ -130,7 +150,10 @@ impl<'a> ExecContext<'a> {
                 let val = self.evaluate_select_item_with_group(item, &group_rows);
                 result_row.push(val);
             }
-            let tid = ItemPointerData { page_id: PageId(0), offset: 0 };
+            let tid = ItemPointerData {
+                page_id: PageId(0),
+                offset: 0,
+            };
             result.push((tid, result_row));
         }
 
@@ -162,7 +185,12 @@ impl<'a> ExecContext<'a> {
     fn evaluate_expr_with_group(&self, expr: &Expr, group_rows: &[Row]) -> String {
         match expr {
             Expr::Function(f) => {
-                let name = f.name.parts.last().map(|s| s.to_uppercase()).unwrap_or_default();
+                let name = f
+                    .name
+                    .parts
+                    .last()
+                    .map(|s| s.to_uppercase())
+                    .unwrap_or_default();
                 match name.as_str() {
                     "COUNT" => {
                         if let Some(FunctionArg::Star) = f.args.first() {
@@ -173,9 +201,18 @@ impl<'a> ExecContext<'a> {
                                 _ => None,
                             });
                             if let Some(inner) = arg {
-                                group_rows.iter().filter(|row| {
-                                    crate::server::evaluate_expr(inner, row, self.tuple_desc.as_ref()).is_some()
-                                }).count().to_string()
+                                group_rows
+                                    .iter()
+                                    .filter(|row| {
+                                        crate::server::evaluate_expr(
+                                            inner,
+                                            row,
+                                            self.tuple_desc.as_ref(),
+                                        )
+                                        .is_some()
+                                    })
+                                    .count()
+                                    .to_string()
                             } else {
                                 group_rows.len().to_string()
                             }
@@ -187,10 +224,17 @@ impl<'a> ExecContext<'a> {
                             _ => None,
                         });
                         if let Some(inner) = arg {
-                            let sum: f64 = group_rows.iter().filter_map(|row| {
-                                crate::server::evaluate_expr(inner, row, self.tuple_desc.as_ref())
+                            let sum: f64 = group_rows
+                                .iter()
+                                .filter_map(|row| {
+                                    crate::server::evaluate_expr(
+                                        inner,
+                                        row,
+                                        self.tuple_desc.as_ref(),
+                                    )
                                     .and_then(|v| v.parse::<f64>().ok())
-                            }).sum();
+                                })
+                                .sum();
                             format!("{}", sum)
                         } else {
                             "0".to_string()
@@ -202,10 +246,17 @@ impl<'a> ExecContext<'a> {
                             _ => None,
                         });
                         if let Some(inner) = arg {
-                            let vals: Vec<f64> = group_rows.iter().filter_map(|row| {
-                                crate::server::evaluate_expr(inner, row, self.tuple_desc.as_ref())
+                            let vals: Vec<f64> = group_rows
+                                .iter()
+                                .filter_map(|row| {
+                                    crate::server::evaluate_expr(
+                                        inner,
+                                        row,
+                                        self.tuple_desc.as_ref(),
+                                    )
                                     .and_then(|v| v.parse::<f64>().ok())
-                            }).collect();
+                                })
+                                .collect();
                             if vals.is_empty() {
                                 "0".to_string()
                             } else {
@@ -221,9 +272,16 @@ impl<'a> ExecContext<'a> {
                             _ => None,
                         });
                         if let Some(inner) = arg {
-                            let mut vals: Vec<String> = group_rows.iter().filter_map(|row| {
-                                crate::server::evaluate_expr(inner, row, self.tuple_desc.as_ref())
-                            }).collect();
+                            let mut vals: Vec<String> = group_rows
+                                .iter()
+                                .filter_map(|row| {
+                                    crate::server::evaluate_expr(
+                                        inner,
+                                        row,
+                                        self.tuple_desc.as_ref(),
+                                    )
+                                })
+                                .collect();
                             vals.sort();
                             vals.first().cloned().unwrap_or_default()
                         } else {
@@ -236,9 +294,16 @@ impl<'a> ExecContext<'a> {
                             _ => None,
                         });
                         if let Some(inner) = arg {
-                            let mut vals: Vec<String> = group_rows.iter().filter_map(|row| {
-                                crate::server::evaluate_expr(inner, row, self.tuple_desc.as_ref())
-                            }).collect();
+                            let mut vals: Vec<String> = group_rows
+                                .iter()
+                                .filter_map(|row| {
+                                    crate::server::evaluate_expr(
+                                        inner,
+                                        row,
+                                        self.tuple_desc.as_ref(),
+                                    )
+                                })
+                                .collect();
                             vals.sort();
                             vals.last().cloned().unwrap_or_default()
                         } else {
@@ -247,8 +312,12 @@ impl<'a> ExecContext<'a> {
                     }
                     _ => {
                         if let Some(first) = group_rows.first() {
-                            crate::server::evaluate_expr(&Expr::Function(f.clone()), first, self.tuple_desc.as_ref())
-                                .unwrap_or_default()
+                            crate::server::evaluate_expr(
+                                &Expr::Function(f.clone()),
+                                first,
+                                self.tuple_desc.as_ref(),
+                            )
+                            .unwrap_or_default()
                         } else {
                             String::new()
                         }
@@ -257,7 +326,11 @@ impl<'a> ExecContext<'a> {
             }
             Expr::Identifier(col) => {
                 if let Some(desc) = &self.tuple_desc {
-                    if let Some(idx) = desc.fields.iter().position(|a| a.name.eq_ignore_ascii_case(col)) {
+                    if let Some(idx) = desc
+                        .fields
+                        .iter()
+                        .position(|a| a.name.eq_ignore_ascii_case(col))
+                    {
                         if let Some(first) = group_rows.first() {
                             first.get(idx).cloned().unwrap_or_default()
                         } else {
@@ -313,12 +386,20 @@ impl<'a> ExecContext<'a> {
             BinaryOperator::Divide => {
                 let l = left.parse::<f64>().unwrap_or(0.0);
                 let r = right.parse::<f64>().unwrap_or(1.0);
-                if r == 0.0 { "NULL".to_string() } else { format!("{}", l / r) }
+                if r == 0.0 {
+                    "NULL".to_string()
+                } else {
+                    format!("{}", l / r)
+                }
             }
             BinaryOperator::Modulo => {
                 let l = left.parse::<f64>().unwrap_or(0.0);
                 let r = right.parse::<f64>().unwrap_or(1.0);
-                if r == 0.0 { "NULL".to_string() } else { format!("{}", l % r) }
+                if r == 0.0 {
+                    "NULL".to_string()
+                } else {
+                    format!("{}", l % r)
+                }
             }
             BinaryOperator::Equals => (left == right).to_string(),
             BinaryOperator::NotEquals => (left != right).to_string(),
@@ -352,10 +433,10 @@ impl<'a> ExecContext<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::ephemeral::EphemeralStorage;
     use crate::buffer_cache::SharedBufferCache;
     use crate::catalog::Catalog;
-    use crate::types::{TupleDesc, Attribute, Oid};
+    use crate::storage::ephemeral::EphemeralStorage;
+    use crate::types::{Attribute, Oid, TupleDesc};
     use std::sync::Arc;
 
     fn make_row(values: &[&str]) -> Row {
@@ -365,9 +446,24 @@ mod tests {
     fn make_desc() -> TupleDesc {
         TupleDesc {
             fields: vec![
-                Attribute { name: "id".to_string(), type_oid: Oid(23), attnum: 1, typmod: -1 },
-                Attribute { name: "dept".to_string(), type_oid: Oid(25), attnum: 2, typmod: -1 },
-                Attribute { name: "salary".to_string(), type_oid: Oid(23), attnum: 3, typmod: -1 },
+                Attribute {
+                    name: "id".to_string(),
+                    type_oid: Oid(23),
+                    attnum: 1,
+                    typmod: -1,
+                },
+                Attribute {
+                    name: "dept".to_string(),
+                    type_oid: Oid(25),
+                    attnum: 2,
+                    typmod: -1,
+                },
+                Attribute {
+                    name: "salary".to_string(),
+                    type_oid: Oid(23),
+                    attnum: 3,
+                    typmod: -1,
+                },
             ],
         }
     }
@@ -386,9 +482,27 @@ mod tests {
         ctx.tuple_desc = Some(make_desc());
 
         let rows = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "eng", "100"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "eng", "200"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "sales", "150"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "eng", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "eng", "200"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["3", "sales", "150"]),
+            ),
         ];
 
         let group_by = vec![Expr::Identifier("dept".to_string())];
@@ -419,9 +533,27 @@ mod tests {
         ctx.tuple_desc = Some(make_desc());
 
         let rows = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "eng", "100"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "eng", "200"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "sales", "150"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "eng", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "eng", "200"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["3", "sales", "150"]),
+            ),
         ];
 
         let group_by = vec![Expr::Identifier("dept".to_string())];
@@ -452,9 +584,27 @@ mod tests {
         ctx.tuple_desc = Some(make_desc());
 
         let rows = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "eng", "100"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "eng", "200"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["3", "sales", "150"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "eng", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "eng", "200"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["3", "sales", "150"]),
+            ),
         ];
 
         let group_by = vec![Expr::Identifier("dept".to_string())];
@@ -486,12 +636,10 @@ mod tests {
 
         let rows: Vec<(ItemPointerData, Row)> = vec![];
         let group_by = vec![Expr::Identifier("dept".to_string())];
-        let select_list = vec![
-            SelectItem::ExprAs {
-                expr: Expr::Identifier("dept".to_string()),
-                alias: "dept".to_string(),
-            },
-        ];
+        let select_list = vec![SelectItem::ExprAs {
+            expr: Expr::Identifier("dept".to_string()),
+            alias: "dept".to_string(),
+        }];
 
         let result = ctx.hash_aggregate(rows, &group_by, &select_list);
         assert_eq!(result.len(), 0);

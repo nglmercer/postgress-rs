@@ -1,7 +1,11 @@
-use crate::sql::ast::{Expr, Literal, BinaryOperator, UnaryOperator, FunctionArg};
+use crate::sql::ast::{BinaryOperator, Expr, FunctionArg, Literal, UnaryOperator};
 use crate::types::TupleDesc;
 
-pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>) -> Option<String> {
+pub fn evaluate_expr(
+    expr: &Expr,
+    row: &[String],
+    tuple_desc: Option<&TupleDesc>,
+) -> Option<String> {
     match expr {
         Expr::Literal(lit) => Some(match lit {
             Literal::Number(n) => n.clone(),
@@ -23,7 +27,12 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
         }),
         Expr::Identifier(col) => {
             if let Some(desc) = tuple_desc {
-                if let Some((idx, _)) = desc.fields.iter().enumerate().find(|(_, f)| f.name.eq_ignore_ascii_case(col)) {
+                if let Some((idx, _)) = desc
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, f)| f.name.eq_ignore_ascii_case(col))
+                {
                     row.get(idx).cloned()
                 } else {
                     None
@@ -70,13 +79,17 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
                 BinaryOperator::Divide => {
                     let l = left_val.parse::<f64>().ok()?;
                     let r = right_val.parse::<f64>().ok()?;
-                    if r == 0.0 { return None; }
+                    if r == 0.0 {
+                        return None;
+                    }
                     Some(format!("{}", l / r))
                 }
                 BinaryOperator::Modulo => {
                     let l = left_val.parse::<f64>().ok()?;
                     let r = right_val.parse::<f64>().ok()?;
-                    if r == 0.0 { return None; }
+                    if r == 0.0 {
+                        return None;
+                    }
                     Some(format!("{}", l % r))
                 }
                 BinaryOperator::Like => {
@@ -110,21 +123,22 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
             }
         }
         Expr::IsNull(inner) => {
-            let val = evaluate_expr(inner, row, tuple_desc)?
-                .trim()
-                .to_string();
+            let val = evaluate_expr(inner, row, tuple_desc)?.trim().to_string();
             Some((val.is_empty() || val.eq_ignore_ascii_case("NULL")).to_string())
         }
         Expr::IsNotNull(inner) => {
-            let val = evaluate_expr(inner, row, tuple_desc)?
-                .trim()
-                .to_string();
+            let val = evaluate_expr(inner, row, tuple_desc)?.trim().to_string();
             Some((!val.is_empty() && !val.eq_ignore_ascii_case("NULL")).to_string())
         }
         Expr::TypeCast { expr, .. } => evaluate_expr(expr, row, tuple_desc),
         Expr::QualifiedIdentifier { table: _, column } => {
             if let Some(desc) = tuple_desc {
-                if let Some((idx, _)) = desc.fields.iter().enumerate().find(|(_, f)| f.name.eq_ignore_ascii_case(column)) {
+                if let Some((idx, _)) = desc
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, f)| f.name.eq_ignore_ascii_case(column))
+                {
                     row.get(idx).cloned()
                 } else {
                     None
@@ -133,17 +147,19 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
                 None
             }
         }
-        Expr::Case { operand, when_clauses, else_clause } => {
-            let operand_val = operand.as_ref().and_then(|e| evaluate_expr(e, row, tuple_desc));
+        Expr::Case {
+            operand,
+            when_clauses,
+            else_clause,
+        } => {
+            let operand_val = operand
+                .as_ref()
+                .and_then(|e| evaluate_expr(e, row, tuple_desc));
             for when in when_clauses {
                 let cond_val = evaluate_expr(&when.when, row, tuple_desc)?;
                 let matches = match &operand_val {
-                    Some(op) => {
-                        cond_val == *op
-                    }
-                    None => {
-                        cond_val == "true" || cond_val == "t"
-                    }
+                    Some(op) => cond_val == *op,
+                    None => cond_val == "true" || cond_val == "t",
                 };
                 if matches {
                     return evaluate_expr(&when.then, row, tuple_desc);
@@ -156,7 +172,12 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
             }
         }
         Expr::Function(func) => {
-            let name = func.name.parts.last().map(|s| s.to_uppercase()).unwrap_or_default();
+            let name = func
+                .name
+                .parts
+                .last()
+                .map(|s| s.to_uppercase())
+                .unwrap_or_default();
             let arg0 = func.args.first().and_then(|a| match a {
                 FunctionArg::Expr(e) => evaluate_expr(e, row, tuple_desc),
                 FunctionArg::Star => Some("*".to_string()),
@@ -178,7 +199,10 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
                 "TRIM" => arg0.map(|s| s.trim().to_string()),
                 "SUBSTRING" => {
                     let s = arg0.unwrap_or_default();
-                    let start = arg1.unwrap_or("1".to_string()).parse::<usize>().unwrap_or(1);
+                    let start = arg1
+                        .unwrap_or("1".to_string())
+                        .parse::<usize>()
+                        .unwrap_or(1);
                     match arg2 {
                         Some(len_str) => {
                             let len = len_str.parse::<usize>().unwrap_or(0);
@@ -198,7 +222,12 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
                 _ => arg0,
             }
         }
-        Expr::Between { expr, low, high, negated } => {
+        Expr::Between {
+            expr,
+            low,
+            high,
+            negated,
+        } => {
             let val = evaluate_expr(expr, row, tuple_desc)?;
             let low_val = evaluate_expr(low, row, tuple_desc)?;
             let high_val = evaluate_expr(high, row, tuple_desc)?;
@@ -213,9 +242,15 @@ pub fn evaluate_expr(expr: &Expr, row: &[String], tuple_desc: Option<&TupleDesc>
             };
             Some((if *negated { !in_range } else { in_range }).to_string())
         }
-        Expr::InList { expr, negated, list } => {
+        Expr::InList {
+            expr,
+            negated,
+            list,
+        } => {
             let val = evaluate_expr(expr, row, tuple_desc)?;
-            let matches = list.iter().any(|e| evaluate_expr(e, row, tuple_desc) == Some(val.clone()));
+            let matches = list
+                .iter()
+                .any(|e| evaluate_expr(e, row, tuple_desc) == Some(val.clone()));
             Some((if *negated { !matches } else { matches }).to_string())
         }
         _ => None,

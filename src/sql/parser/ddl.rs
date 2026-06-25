@@ -1,5 +1,5 @@
-use crate::sql::ast::*;
 use super::{Parser, Token};
+use crate::sql::ast::*;
 
 impl Parser {
     pub(crate) fn parse_create(&mut self) -> anyhow::Result<Statement> {
@@ -323,7 +323,10 @@ impl Parser {
         })
     }
 
-    pub(crate) fn parse_table_constraint(&mut self, constraints: &mut Vec<TableConstraint>) -> anyhow::Result<()> {
+    pub(crate) fn parse_table_constraint(
+        &mut self,
+        constraints: &mut Vec<TableConstraint>,
+    ) -> anyhow::Result<()> {
         match self.peek() {
             Token::Keyword(k) if k.to_uppercase() == "PRIMARY" => {
                 self.advance();
@@ -434,12 +437,14 @@ impl Parser {
                     self.advance();
                 }
                 let name = self.expect_ident()?;
-                let if_exists = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF");
+                let if_exists =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF");
                 if if_exists {
                     self.advance();
                     self.expect_keyword("EXISTS")?;
                 }
-                let cascade = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "CASCADE");
+                let cascade =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "CASCADE");
                 if cascade {
                     self.advance();
                 }
@@ -478,10 +483,12 @@ impl Parser {
                 let action = match self.peek() {
                     Token::Keyword(k) if k.to_uppercase() == "SET" => {
                         self.advance();
-                        if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "DEFAULT") {
+                        if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "DEFAULT")
+                        {
                             self.advance();
                             AlterColumnAction::SetDefault(self.parse_expr()?)
-                        } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT") {
+                        } else if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT")
+                        {
                             self.advance();
                             self.expect_keyword("NULL")?;
                             AlterColumnAction::SetNotNull
@@ -522,7 +529,8 @@ impl Parser {
         match self.peek() {
             Token::Keyword(k) if k.to_uppercase() == "TABLE" => {
                 self.advance();
-                let if_exists = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF");
+                let if_exists =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF");
                 if if_exists {
                     self.advance();
                     self.expect_keyword("EXISTS")?;
@@ -533,7 +541,8 @@ impl Parser {
                     parts.push(self.expect_ident()?);
                 }
                 let table = ObjectName::new(parts);
-                let cascade = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "CASCADE");
+                let cascade =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "CASCADE");
                 if cascade {
                     self.advance();
                 }
@@ -545,7 +554,8 @@ impl Parser {
             }
             Token::Keyword(k) if k.to_uppercase() == "INDEX" => {
                 self.advance();
-                let if_exists = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF");
+                let if_exists =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF");
                 if if_exists {
                     self.advance();
                     self.expect_keyword("EXISTS")?;
@@ -556,7 +566,8 @@ impl Parser {
                     parts.push(self.expect_ident()?);
                 }
                 let name = ObjectName::new(parts);
-                let cascade = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "CASCADE");
+                let cascade =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "CASCADE");
                 if cascade {
                     self.advance();
                 }
@@ -623,7 +634,8 @@ impl Parser {
         loop {
             if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WHEN") {
                 self.advance();
-                let not_matched = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT");
+                let not_matched =
+                    matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "NOT");
                 if not_matched {
                     self.advance();
                     self.expect_keyword("MATCHED")?;
@@ -631,7 +643,8 @@ impl Parser {
                     self.expect_keyword("MATCHED")?;
                 }
 
-                let condition = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AND") {
+                let condition = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AND")
+                {
                     self.advance();
                     Some(Box::new(self.parse_expr()?))
                 } else {
@@ -743,7 +756,8 @@ impl Parser {
     }
 
     pub(crate) fn parse_create_sequence(&mut self) -> anyhow::Result<Statement> {
-        let if_not_exists = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF") {
+        let if_not_exists = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF")
+        {
             self.advance();
             self.expect_keyword("NOT")?;
             self.expect_keyword("EXISTS")?;
@@ -791,7 +805,9 @@ impl Parser {
                     };
                     increment = Some(if negative { -n } else { n });
                 }
-                Token::Keyword(k) if k.to_uppercase() == "MINVALUE" || k.to_uppercase() == "MINVALUE" => {
+                Token::Keyword(k)
+                    if k.to_uppercase() == "MINVALUE" || k.to_uppercase() == "MINVALUE" =>
+                {
                     self.advance();
                     let n: i64 = match &self.peek().clone() {
                         Token::Number(n) => {
@@ -803,7 +819,9 @@ impl Parser {
                     };
                     min_value = Some(n);
                 }
-                Token::Keyword(k) if k.to_uppercase() == "MAXVALUE" || k.to_uppercase() == "MAXVALUE" => {
+                Token::Keyword(k)
+                    if k.to_uppercase() == "MAXVALUE" || k.to_uppercase() == "MAXVALUE" =>
+                {
                     self.advance();
                     let n: i64 = match &self.peek().clone() {
                         Token::Number(n) => {
@@ -817,7 +835,8 @@ impl Parser {
                 }
                 Token::Keyword(k) if k.to_uppercase() == "START" => {
                     self.advance();
-                    let with = matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WITH");
+                    let with =
+                        matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "WITH");
                     if with {
                         self.advance();
                     }
@@ -929,8 +948,12 @@ impl Parser {
                     self.advance();
                     // SUBTYPE may be an ident or keyword
                     match self.peek() {
-                        Token::Keyword(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
-                        Token::Ident(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
+                        Token::Keyword(k) if k.to_uppercase() == "SUBTYPE" => {
+                            self.advance();
+                        }
+                        Token::Ident(k) if k.to_uppercase() == "SUBTYPE" => {
+                            self.advance();
+                        }
                         _ => anyhow::bail!("expected SUBTYPE"),
                     }
                     self.expect(&Token::Eq)?;
@@ -939,8 +962,12 @@ impl Parser {
                     TypeDefinition::Range(subtype)
                 } else {
                     match self.peek() {
-                        Token::Keyword(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
-                        Token::Ident(k) if k.to_uppercase() == "SUBTYPE" => { self.advance(); }
+                        Token::Keyword(k) if k.to_uppercase() == "SUBTYPE" => {
+                            self.advance();
+                        }
+                        Token::Ident(k) if k.to_uppercase() == "SUBTYPE" => {
+                            self.advance();
+                        }
                         _ => anyhow::bail!("expected SUBTYPE"),
                     }
                     self.expect(&Token::Eq)?;
@@ -955,7 +982,8 @@ impl Parser {
                 loop {
                     let attr_name = self.expect_ident()?;
                     let data_type = self.parse_data_type()?;
-                    let collation = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "COLLATE") {
+                    let collation = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "COLLATE")
+                    {
                         self.advance();
                         let mut collation_parts = vec![self.expect_ident()?];
                         while matches!(self.peek(), Token::Dot) {
@@ -989,7 +1017,8 @@ impl Parser {
     }
 
     pub(crate) fn parse_create_schema(&mut self) -> anyhow::Result<Statement> {
-        let if_not_exists = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF") {
+        let if_not_exists = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "IF")
+        {
             self.advance();
             self.expect_keyword("NOT")?;
             self.expect_keyword("EXISTS")?;

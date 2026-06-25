@@ -1,16 +1,16 @@
-pub mod page;
-pub mod scan;
-pub mod insert;
-pub mod search;
-pub mod hash_index;
+pub mod brin_index;
 pub mod gin_index;
 pub mod gist_index;
-pub mod brin_index;
+pub mod hash_index;
+pub mod insert;
+pub mod page;
+pub mod scan;
+pub mod search;
 
 use crate::types::PageId;
-pub use page::{BTreePage, BTreePageType, IndexTuple, BTreeMetaPage};
-pub use scan::{BTreeScan, ScanDirection};
 pub use insert::btree_insert;
+pub use page::{BTreeMetaPage, BTreePage, BTreePageType, IndexTuple};
+pub use scan::{BTreeScan, ScanDirection};
 pub use search::btree_search;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +84,11 @@ impl BTreeIndex {
     pub fn encode_composite_key(&self, values: &[String]) -> Vec<u8> {
         let mut key = Vec::new();
         for (i, val) in values.iter().enumerate() {
-            let direction = self.columns.get(i).map(|c| c.direction).unwrap_or(SortDirection::Asc);
+            let direction = self
+                .columns
+                .get(i)
+                .map(|c| c.direction)
+                .unwrap_or(SortDirection::Asc);
             let nulls_first = self.columns.get(i).map(|c| c.nulls_first).unwrap_or(false);
 
             // Encode null indicator
@@ -93,7 +97,11 @@ impl BTreeIndex {
                 key.push(if nulls_first { 1u8 } else { 0u8 });
             } else {
                 key.push(1u8); // not null
-                key.push(if direction == SortDirection::Desc { 1u8 } else { 0u8 });
+                key.push(if direction == SortDirection::Desc {
+                    1u8
+                } else {
+                    0u8
+                });
 
                 // Encode value length and data
                 let val_bytes = val.as_bytes();
@@ -132,9 +140,8 @@ impl BTreeIndex {
                     break;
                 }
 
-                let len = u32::from_le_bytes([
-                    key[pos], key[pos + 1], key[pos + 2], key[pos + 3],
-                ]) as usize;
+                let len = u32::from_le_bytes([key[pos], key[pos + 1], key[pos + 2], key[pos + 3]])
+                    as usize;
                 pos += 4;
 
                 if pos + len > key.len() {
@@ -162,11 +169,18 @@ mod tests {
 
     #[test]
     fn test_composite_key_roundtrip() {
-        let index = BTreeIndex::new(1, 100, PageId(1), 8192)
-            .with_columns(vec![
-                IndexColumn { name: "id".to_string(), direction: SortDirection::Asc, nulls_first: false },
-                IndexColumn { name: "name".to_string(), direction: SortDirection::Desc, nulls_first: true },
-            ]);
+        let index = BTreeIndex::new(1, 100, PageId(1), 8192).with_columns(vec![
+            IndexColumn {
+                name: "id".to_string(),
+                direction: SortDirection::Asc,
+                nulls_first: false,
+            },
+            IndexColumn {
+                name: "name".to_string(),
+                direction: SortDirection::Desc,
+                nulls_first: true,
+            },
+        ]);
 
         let values = vec!["42".to_string(), "hello".to_string()];
         let key = index.encode_composite_key(&values);
@@ -177,11 +191,18 @@ mod tests {
 
     #[test]
     fn test_composite_key_with_null() {
-        let index = BTreeIndex::new(1, 100, PageId(1), 8192)
-            .with_columns(vec![
-                IndexColumn { name: "id".to_string(), direction: SortDirection::Asc, nulls_first: false },
-                IndexColumn { name: "name".to_string(), direction: SortDirection::Asc, nulls_first: true },
-            ]);
+        let index = BTreeIndex::new(1, 100, PageId(1), 8192).with_columns(vec![
+            IndexColumn {
+                name: "id".to_string(),
+                direction: SortDirection::Asc,
+                nulls_first: false,
+            },
+            IndexColumn {
+                name: "name".to_string(),
+                direction: SortDirection::Asc,
+                nulls_first: true,
+            },
+        ]);
 
         let values = vec!["42".to_string(), "NULL".to_string()];
         let key = index.encode_composite_key(&values);
@@ -192,8 +213,7 @@ mod tests {
 
     #[test]
     fn test_unique_index() {
-        let index = BTreeIndex::new(1, 100, PageId(1), 8192)
-            .with_unique(true);
+        let index = BTreeIndex::new(1, 100, PageId(1), 8192).with_unique(true);
 
         assert!(index.is_unique());
         assert_eq!(index.column_count(), 0);

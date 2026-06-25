@@ -1,5 +1,5 @@
-use crate::protocol::codes::Query;
 use crate::catalog::IndexInfo;
+use crate::protocol::codes::Query;
 
 pub struct SeqScan {
     pub rel_oid: u32,
@@ -22,7 +22,11 @@ pub struct Planner;
 impl Planner {
     pub fn plan(query: &Query, indexes: &[IndexInfo]) -> Plan {
         match query {
-            Query::Select { table, where_clause, .. } => {
+            Query::Select {
+                table,
+                where_clause,
+                ..
+            } => {
                 let rel_oid = table.0;
                 if let Some(filter) = where_clause {
                     if let Some((column, value)) = Self::parse_equality_filter(filter) {
@@ -37,33 +41,49 @@ impl Planner {
                             });
                         }
                     }
-                    Plan::SeqScan(SeqScan { rel_oid, filter: Some(filter.clone()) })
+                    Plan::SeqScan(SeqScan {
+                        rel_oid,
+                        filter: Some(filter.clone()),
+                    })
                 } else {
-                    Plan::SeqScan(SeqScan { rel_oid, filter: None })
+                    Plan::SeqScan(SeqScan {
+                        rel_oid,
+                        filter: None,
+                    })
                 }
             }
-            Query::Insert { table, .. } => {
-                Plan::SeqScan(SeqScan { rel_oid: table.0, filter: None })
-            }
-            Query::CreateTable { .. } => {
-                Plan::SeqScan(SeqScan { rel_oid: 0, filter: None })
-            }
-            Query::DropTable { .. } => {
-                Plan::SeqScan(SeqScan { rel_oid: 0, filter: None })
-            }
-            Query::Begin { .. } => {
-                Plan::SeqScan(SeqScan { rel_oid: 0, filter: None })
-            }
-            Query::Commit => {
-                Plan::SeqScan(SeqScan { rel_oid: 0, filter: None })
-            }
-            Query::Rollback => {
-                Plan::SeqScan(SeqScan { rel_oid: 0, filter: None })
-            }
-            Query::CreateIndex { .. } => {
-                Plan::SeqScan(SeqScan { rel_oid: 0, filter: None })
-            }
-            _ => Plan::SeqScan(SeqScan { rel_oid: 0, filter: None }),
+            Query::Insert { table, .. } => Plan::SeqScan(SeqScan {
+                rel_oid: table.0,
+                filter: None,
+            }),
+            Query::CreateTable { .. } => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
+            Query::DropTable { .. } => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
+            Query::Begin { .. } => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
+            Query::Commit => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
+            Query::Rollback => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
+            Query::CreateIndex { .. } => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
+            _ => Plan::SeqScan(SeqScan {
+                rel_oid: 0,
+                filter: None,
+            }),
         }
     }
 
@@ -71,7 +91,11 @@ impl Planner {
         let parts: Vec<&str> = filter.splitn(2, '=').collect();
         if parts.len() == 2 {
             let col = parts[0].trim().to_string();
-            let val = parts[1].trim().trim_matches('\'').trim_matches('"').to_string();
+            let val = parts[1]
+                .trim()
+                .trim_matches('\'')
+                .trim_matches('"')
+                .to_string();
             Some((col, val))
         } else {
             None

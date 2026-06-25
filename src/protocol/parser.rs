@@ -1,5 +1,5 @@
-use crate::types::Oid;
 use crate::protocol::codes::Query;
+use crate::types::Oid;
 
 #[derive(Debug, Clone)]
 pub enum RowData {
@@ -12,9 +12,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-        }
+        Self { buffer: Vec::new() }
     }
 
     pub fn feed(&mut self, data: &[u8]) -> Option<Query> {
@@ -79,19 +77,20 @@ fn parse_select(s: &str) -> Option<Query> {
     let s_upper = s.to_uppercase();
     let select_pos = s_upper.find("SELECT")?;
     let after_select = s[select_pos + 6..].trim();
-    
-    let (columns, table_and_where) = if after_select.starts_with('*') || after_select.to_uppercase().starts_with("*") {
-        let after_star = after_select[1..].trim();
-        let after_star_upper = after_star.to_uppercase();
-        let from_pos = after_star_upper.find("FROM")?;
-        let after_from = after_star[from_pos + 4..].trim();
-        (vec![], after_from)
-    } else {
-        let from_pos = s_upper.find("FROM")?;
-        let cols_str = s[select_pos + 6..from_pos].trim();
-        let cols = cols_str.split(',').map(|s| s.trim().to_string()).collect();
-        (cols, s[from_pos + 4..].trim())
-    };
+
+    let (columns, table_and_where) =
+        if after_select.starts_with('*') || after_select.to_uppercase().starts_with("*") {
+            let after_star = after_select[1..].trim();
+            let after_star_upper = after_star.to_uppercase();
+            let from_pos = after_star_upper.find("FROM")?;
+            let after_from = after_star[from_pos + 4..].trim();
+            (vec![], after_from)
+        } else {
+            let from_pos = s_upper.find("FROM")?;
+            let cols_str = s[select_pos + 6..from_pos].trim();
+            let cols = cols_str.split(',').map(|s| s.trim().to_string()).collect();
+            (cols, s[from_pos + 4..].trim())
+        };
 
     let table_and_where_upper = table_and_where.to_uppercase();
     let (table_name, where_clause) = if let Some(idx) = table_and_where_upper.find("WHERE") {
@@ -122,14 +121,20 @@ fn parse_insert(s: &str) -> Option<Query> {
         return None;
     }
     let table_name = parts[0].trim();
-    let values_part = parts[1].trim().trim_start_matches('(').trim_end_matches(')');
+    let values_part = parts[1]
+        .trim()
+        .trim_start_matches('(')
+        .trim_end_matches(')');
     let values: Vec<Vec<u8>> = values_part
         .split(',')
         .map(|v| v.trim().as_bytes().to_vec())
         .collect();
-    
+
     let table_oid = Oid(fnv_hash(table_name));
-    Some(Query::Insert { table: table_oid, values })
+    Some(Query::Insert {
+        table: table_oid,
+        values,
+    })
 }
 
 fn parse_create_table(s: &str) -> Option<Query> {
@@ -138,8 +143,11 @@ fn parse_create_table(s: &str) -> Option<Query> {
     let name_end = after_create.find('(')?;
     let table_name = after_create[..name_end].trim().to_string();
     let cols_str = &after_create[name_end..];
-    let cols_str = cols_str.trim_start_matches('(').trim_end_matches(')').trim();
-    
+    let cols_str = cols_str
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .trim();
+
     let mut columns = Vec::new();
     for col_def in cols_str.split(',') {
         let parts: Vec<&str> = col_def.trim().split_whitespace().collect();
@@ -155,8 +163,11 @@ fn parse_create_table(s: &str) -> Option<Query> {
             columns.push((col_name, type_oid));
         }
     }
-    
-    Some(Query::CreateTable { name: table_name, columns })
+
+    Some(Query::CreateTable {
+        name: table_name,
+        columns,
+    })
 }
 
 fn parse_drop_table(s: &str) -> Option<Query> {
@@ -176,8 +187,16 @@ fn parse_create_index(s: &str) -> Option<Query> {
     let index_name = parts[0].trim().to_string();
     let after_on = parts[1].trim();
     let paren_pos = after_on.find('(')?;
-    let table_name = after_on[..paren_pos].trim().trim_end_matches(';').trim().to_string();
-    let col_str = after_on[paren_pos..].trim_start_matches('(').trim_end_matches(')').trim_end_matches(';').trim();
+    let table_name = after_on[..paren_pos]
+        .trim()
+        .trim_end_matches(';')
+        .trim()
+        .to_string();
+    let col_str = after_on[paren_pos..]
+        .trim_start_matches('(')
+        .trim_end_matches(')')
+        .trim_end_matches(';')
+        .trim();
     let column_name = col_str.to_string();
 
     Some(Query::CreateIndex {
@@ -196,20 +215,24 @@ fn parse_update(s: &str) -> Option<Query> {
     }
     let table_name = parts[0].trim();
     let after_set = parts[1].trim();
-    
+
     let (set_part, where_part) = if let Some(idx) = after_set.to_uppercase().find("WHERE") {
         (&after_set[..idx], Some(after_set[idx..].to_string()))
     } else {
         (after_set, None)
     };
-    
+
     let set_parts: Vec<&str> = set_part.splitn(2, '=').collect();
     if set_parts.len() != 2 {
         return None;
     }
     let column = set_parts[0].trim();
-    let value = set_parts[1].trim().trim_start_matches('\'').trim_end_matches('\'').to_string();
-    
+    let value = set_parts[1]
+        .trim()
+        .trim_start_matches('\'')
+        .trim_end_matches('\'')
+        .to_string();
+
     Some(Query::Update {
         table: Oid(fnv_hash(table_name)),
         column: column.to_string(),
@@ -227,11 +250,14 @@ fn parse_delete(s: &str) -> Option<Query> {
     let after_from = after_delete[from_pos + 4..].trim();
     let after_from_upper = after_from.to_uppercase();
     let (table_name, where_part) = if let Some(idx) = after_from_upper.find("WHERE") {
-        (after_from[..idx].trim(), Some(after_from[idx..].trim().to_string()))
+        (
+            after_from[..idx].trim(),
+            Some(after_from[idx..].trim().to_string()),
+        )
     } else {
         (after_from.trim(), None)
     };
-    
+
     Some(Query::Delete {
         table: Oid(fnv_hash(table_name)),
         where_clause: where_part,

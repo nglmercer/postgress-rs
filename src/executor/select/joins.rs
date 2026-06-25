@@ -1,8 +1,10 @@
+use super::context::ExecContext;
+use crate::executor::select::algorithms::{
+    choose_join_algorithm, hash_join, merge_join, JoinAlgorithm,
+};
+use crate::executor::select::Row;
 use crate::sql::ast::*;
 use crate::types::*;
-use crate::executor::select::Row;
-use crate::executor::select::algorithms::{hash_join, merge_join, choose_join_algorithm, JoinAlgorithm};
-use super::context::ExecContext;
 
 impl<'a> ExecContext<'a> {
     pub fn execute_join(
@@ -20,15 +22,36 @@ impl<'a> ExecContext<'a> {
                     let algo = choose_join_algorithm(left.len(), right.len(), join.join_type);
                     match algo {
                         JoinAlgorithm::Hash => {
-                            return hash_join(&left, &right, on_expr, join.join_type, left_desc, &self.col_names);
+                            return hash_join(
+                                &left,
+                                &right,
+                                on_expr,
+                                join.join_type,
+                                left_desc,
+                                &self.col_names,
+                            );
                         }
                         JoinAlgorithm::Merge => {
-                            return merge_join(&left, &right, on_expr, join.join_type, left_desc, &self.col_names);
+                            return merge_join(
+                                &left,
+                                &right,
+                                on_expr,
+                                join.join_type,
+                                left_desc,
+                                &self.col_names,
+                            );
                         }
                         JoinAlgorithm::NestedLoop => {}
                     }
                 }
-                self.nested_loop_join(&left, &right, on_expr, join.join_type, left_desc, right_col_count)
+                self.nested_loop_join(
+                    &left,
+                    &right,
+                    on_expr,
+                    join.join_type,
+                    left_desc,
+                    right_col_count,
+                )
             }
             JoinConstraint::None => {
                 let mut result = Vec::new();
@@ -41,14 +64,18 @@ impl<'a> ExecContext<'a> {
                 }
                 Ok(result)
             }
-            JoinConstraint::Using(cols) => {
-                self.using_join(&left, &right, cols, right_col_count)
-            }
+            JoinConstraint::Using(cols) => self.using_join(&left, &right, cols, right_col_count),
         }
     }
 
     fn is_equi_join(&self, expr: &Expr) -> bool {
-        matches!(expr, Expr::BinaryOp { op: BinaryOperator::Equals, .. })
+        matches!(
+            expr,
+            Expr::BinaryOp {
+                op: BinaryOperator::Equals,
+                ..
+            }
+        )
     }
 
     fn nested_loop_join(
@@ -166,8 +193,14 @@ impl<'a> ExecContext<'a> {
             for (_rtid, rrow) in right {
                 let mut match_all = true;
                 for col in cols {
-                    let left_idx = self.col_names.iter().position(|n| n.eq_ignore_ascii_case(col));
-                    let right_idx = self.col_names.iter().position(|n| n.eq_ignore_ascii_case(col));
+                    let left_idx = self
+                        .col_names
+                        .iter()
+                        .position(|n| n.eq_ignore_ascii_case(col));
+                    let right_idx = self
+                        .col_names
+                        .iter()
+                        .position(|n| n.eq_ignore_ascii_case(col));
                     if let (Some(li), Some(ri)) = (left_idx, right_idx) {
                         if li < lrow.len() && (right_start + ri) < (right_start + rrow.len()) {
                             if lrow[li] != rrow[ri] {

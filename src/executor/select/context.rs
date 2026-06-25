@@ -1,8 +1,8 @@
-use crate::sql::ast::*;
-use crate::types::*;
 use crate::buffer_cache::SharedBufferCache;
 use crate::executor::heap::{heap_scan, heap_scan_with_optional_snapshot};
-use crate::executor::select::{Row, execute_select, execute_select_with_snapshot};
+use crate::executor::select::{execute_select, execute_select_with_snapshot, Row};
+use crate::sql::ast::*;
+use crate::types::*;
 
 pub struct ExecContext<'a> {
     pub(crate) cache: &'a SharedBufferCache,
@@ -28,7 +28,10 @@ impl<'a> ExecContext<'a> {
         self
     }
 
-    pub async fn execute_from(&mut self, from: &FromClause) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
+    pub async fn execute_from(
+        &mut self,
+        from: &FromClause,
+    ) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
         if from.joins.is_empty() {
             return Ok(vec![]);
         }
@@ -45,27 +48,50 @@ impl<'a> ExecContext<'a> {
         Ok(result)
     }
 
-    pub async fn resolve_table_ref(&mut self, table_ref: &TableRef) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
+    pub async fn resolve_table_ref(
+        &mut self,
+        table_ref: &TableRef,
+    ) -> anyhow::Result<Vec<(ItemPointerData, Row)>> {
         match table_ref {
             TableRef::Table(name) => {
                 let table_str = name.parts.join(".");
                 let rels = self.catalog.list_relations();
-                let rel = rels.iter()
+                let rel = rels
+                    .iter()
                     .find(|r| r.name.to_uppercase() == table_str.to_uppercase())
                     .ok_or_else(|| anyhow::anyhow!("relation \"{}\" does not exist", table_str))?;
                 let rel_oid = rel.rel_oid.0;
                 let desc = rel.tuple_desc.clone();
                 self.col_names = desc.fields.iter().map(|a| a.name.clone()).collect();
                 self.tuple_desc = Some(desc);
-                let rows = heap_scan_with_optional_snapshot(self.cache, rel_oid, self.snapshot.as_ref()).await?;
+                let rows =
+                    heap_scan_with_optional_snapshot(self.cache, rel_oid, self.snapshot.as_ref())
+                        .await?;
                 Ok(rows)
             }
             TableRef::Subquery(sub) => {
                 let sub_select = sub.as_ref().clone();
-                let result = Box::pin(execute_select_with_snapshot(&sub_select, self.cache, self.catalog, self.snapshot.clone())).await?;
-                let rows: Vec<(ItemPointerData, Row)> = result.rows.into_iter().enumerate().map(|(i, row)| {
-                    (ItemPointerData { page_id: PageId(i as u32), offset: 0 }, row)
-                }).collect();
+                let result = Box::pin(execute_select_with_snapshot(
+                    &sub_select,
+                    self.cache,
+                    self.catalog,
+                    self.snapshot.clone(),
+                ))
+                .await?;
+                let rows: Vec<(ItemPointerData, Row)> = result
+                    .rows
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, row)| {
+                        (
+                            ItemPointerData {
+                                page_id: PageId(i as u32),
+                                offset: 0,
+                            },
+                            row,
+                        )
+                    })
+                    .collect();
                 self.col_names = result.columns;
                 Ok(rows)
             }

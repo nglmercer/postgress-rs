@@ -1,6 +1,6 @@
-use crate::sql::ast::*;
-use crate::executor::select::{Row, SelectResult};
 use super::context::ExecContext;
+use crate::executor::select::{Row, SelectResult};
+use crate::sql::ast::*;
 
 impl<'a> ExecContext<'a> {
     pub fn apply_set_operation(
@@ -68,6 +68,9 @@ impl<'a> ExecContext<'a> {
             }
         }
 
-        Ok(SelectResult { columns, rows: result_rows })
+        Ok(SelectResult {
+            columns,
+            rows: result_rows,
+        })
     }
 }

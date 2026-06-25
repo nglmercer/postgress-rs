@@ -1,6 +1,6 @@
+use crate::executor::select::Row;
 use crate::sql::ast::*;
 use crate::types::*;
-use crate::executor::select::Row;
 use std::collections::HashMap;
 
 pub fn hash_join(
@@ -23,8 +23,15 @@ pub fn hash_join(
 
     for (_rtid, rrow) in right {
         // For equi-join on expression like "a.id = b.id", extract the key
-        if let Expr::BinaryOp { left: _l, op: BinaryOperator::Equals, right: right_expr } = on_expr {
-            if let Some(key_val) = crate::server::evaluate_expr(right_expr, rrow, left_desc.as_ref()) {
+        if let Expr::BinaryOp {
+            left: _l,
+            op: BinaryOperator::Equals,
+            right: right_expr,
+        } = on_expr
+        {
+            if let Some(key_val) =
+                crate::server::evaluate_expr(right_expr, rrow, left_desc.as_ref())
+            {
                 hash_table.entry(key_val).or_default().push(rrow);
             }
         }
@@ -32,8 +39,14 @@ pub fn hash_join(
 
     // Probe hash table with left side
     for (ltid, lrow) in left {
-        if let Expr::BinaryOp { left: left_expr, op: BinaryOperator::Equals, .. } = on_expr {
-            if let Some(key_val) = crate::server::evaluate_expr(left_expr, lrow, left_desc.as_ref()) {
+        if let Expr::BinaryOp {
+            left: left_expr,
+            op: BinaryOperator::Equals,
+            ..
+        } = on_expr
+        {
+            if let Some(key_val) = crate::server::evaluate_expr(left_expr, lrow, left_desc.as_ref())
+            {
                 if let Some(matching_rows) = hash_table.get(&key_val) {
                     for rrow in matching_rows {
                         let mut combined = lrow.clone();
@@ -55,13 +68,23 @@ pub fn hash_join(
         for (_rtid, rrow) in right {
             // Check if this right row was matched
             let mut matched = false;
-            if let Expr::BinaryOp { right: right_expr, .. } = on_expr {
-                if let Some(key_val) = crate::server::evaluate_expr(right_expr, rrow, left_desc.as_ref()) {
+            if let Expr::BinaryOp {
+                right: right_expr, ..
+            } = on_expr
+            {
+                if let Some(key_val) =
+                    crate::server::evaluate_expr(right_expr, rrow, left_desc.as_ref())
+                {
                     // Check if any left row had this key
                     for (_ltid, lrow) in left {
                         if let Some(lkey) = crate::server::evaluate_expr(
-                            if let Expr::BinaryOp { left: l, .. } = on_expr { l } else { return Ok(result); },
-                            lrow, left_desc.as_ref()
+                            if let Expr::BinaryOp { left: l, .. } = on_expr {
+                                l
+                            } else {
+                                return Ok(result);
+                            },
+                            lrow,
+                            left_desc.as_ref(),
                         ) {
                             if lkey == key_val {
                                 matched = true;
@@ -74,7 +97,13 @@ pub fn hash_join(
             if !matched {
                 let mut combined = vec!["".to_string(); left_col_count];
                 combined.extend(rrow.clone());
-                result.push((ItemPointerData { page_id: PageId(0), offset: 0 }, combined));
+                result.push((
+                    ItemPointerData {
+                        page_id: PageId(0),
+                        offset: 0,
+                    },
+                    combined,
+                ));
             }
         }
     }
@@ -88,12 +117,22 @@ pub fn hash_join(
         };
         for (ltid, lrow) in left {
             let mut matched = false;
-            if let Expr::BinaryOp { left: left_expr, .. } = on_expr {
-                if let Some(key_val) = crate::server::evaluate_expr(left_expr, lrow, left_desc.as_ref()) {
+            if let Expr::BinaryOp {
+                left: left_expr, ..
+            } = on_expr
+            {
+                if let Some(key_val) =
+                    crate::server::evaluate_expr(left_expr, lrow, left_desc.as_ref())
+                {
                     for (_rtid, rrow) in right {
                         if let Some(rkey) = crate::server::evaluate_expr(
-                            if let Expr::BinaryOp { right: r, .. } = on_expr { r } else { return Ok(result); },
-                            rrow, left_desc.as_ref()
+                            if let Expr::BinaryOp { right: r, .. } = on_expr {
+                                r
+                            } else {
+                                return Ok(result);
+                            },
+                            rrow,
+                            left_desc.as_ref(),
                         ) {
                             if rkey == key_val {
                                 matched = true;
@@ -166,25 +205,36 @@ pub fn merge_join(
     }
 
     // Extract join keys and sort
-    let mut left_with_keys: Vec<(&ItemPointerData, &Row, String)> = left.iter().map(|(tid, row)| {
-        let key = if let Expr::BinaryOp { left: left_expr, .. } = on_expr {
-            crate::server::evaluate_expr(left_expr, row, left_desc.as_ref())
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-        (tid, row, key)
-    }).collect();
+    let mut left_with_keys: Vec<(&ItemPointerData, &Row, String)> = left
+        .iter()
+        .map(|(tid, row)| {
+            let key = if let Expr::BinaryOp {
+                left: left_expr, ..
+            } = on_expr
+            {
+                crate::server::evaluate_expr(left_expr, row, left_desc.as_ref()).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            (tid, row, key)
+        })
+        .collect();
 
-    let mut right_with_keys: Vec<(&ItemPointerData, &Row, String)> = right.iter().map(|(tid, row)| {
-        let key = if let Expr::BinaryOp { right: right_expr, .. } = on_expr {
-            crate::server::evaluate_expr(right_expr, row, left_desc.as_ref())
-                .unwrap_or_default()
-        } else {
-            String::new()
-        };
-        (tid, row, key)
-    }).collect();
+    let mut right_with_keys: Vec<(&ItemPointerData, &Row, String)> = right
+        .iter()
+        .map(|(tid, row)| {
+            let key = if let Expr::BinaryOp {
+                right: right_expr, ..
+            } = on_expr
+            {
+                crate::server::evaluate_expr(right_expr, row, left_desc.as_ref())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            (tid, row, key)
+        })
+        .collect();
 
     left_with_keys.sort_by(|a, b| a.2.cmp(&b.2));
     right_with_keys.sort_by(|a, b| a.2.cmp(&b.2));
@@ -303,7 +353,7 @@ pub enum JoinAlgorithm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{TupleDesc, Attribute, Oid};
+    use crate::types::{Attribute, Oid, TupleDesc};
 
     fn make_row(values: &[&str]) -> Row {
         values.iter().map(|s| s.to_string()).collect()
@@ -314,8 +364,18 @@ mod tests {
     fn make_desc() -> TupleDesc {
         TupleDesc {
             fields: vec![
-                Attribute { name: "id".to_string(), type_oid: Oid(23), attnum: 1, typmod: -1 },
-                Attribute { name: "val".to_string(), type_oid: Oid(25), attnum: 2, typmod: -1 },
+                Attribute {
+                    name: "id".to_string(),
+                    type_oid: Oid(23),
+                    attnum: 1,
+                    typmod: -1,
+                },
+                Attribute {
+                    name: "val".to_string(),
+                    type_oid: Oid(25),
+                    attnum: 2,
+                    typmod: -1,
+                },
             ],
         }
     }
@@ -323,12 +383,36 @@ mod tests {
     #[test]
     fn test_hash_join_inner() {
         let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
         ];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -340,19 +424,43 @@ mod tests {
         let desc = Some(make_desc());
         let result = hash_join(&left, &right, &on_expr, JoinType::Inner, &desc, &[]).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].1[0], "1");   // left id
+        assert_eq!(result[0].1[0], "1"); // left id
         assert_eq!(result[0].1[3], "100"); // right val (idx 3 after combine)
     }
 
     #[test]
     fn test_merge_join_inner() {
         let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
         ];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -364,26 +472,62 @@ mod tests {
         let desc = Some(make_desc());
         let result = merge_join(&left, &right, &on_expr, JoinType::Inner, &desc, &[]).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0].1[0], "1");   // left id
+        assert_eq!(result[0].1[0], "1"); // left id
         assert_eq!(result[0].1[3], "100"); // right val (idx 3 after combine)
     }
 
     #[test]
     fn test_choose_join_algorithm() {
-        assert_eq!(choose_join_algorithm(100, 10000, JoinType::Inner), JoinAlgorithm::Hash);
-        assert_eq!(choose_join_algorithm(10000, 10000, JoinType::Inner), JoinAlgorithm::Merge);
+        assert_eq!(
+            choose_join_algorithm(100, 10000, JoinType::Inner),
+            JoinAlgorithm::Hash
+        );
+        assert_eq!(
+            choose_join_algorithm(10000, 10000, JoinType::Inner),
+            JoinAlgorithm::Merge
+        );
     }
 
     #[test]
     fn test_hash_join_left() {
         let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["4", "Dave"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["4", "Dave"]),
+            ),
         ];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -405,12 +549,28 @@ mod tests {
 
     #[test]
     fn test_hash_join_right() {
-        let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-        ];
+        let left = vec![(
+            ItemPointerData {
+                page_id: PageId(1),
+                offset: 0,
+            },
+            make_row(&["1", "Alice"]),
+        )];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -431,12 +591,36 @@ mod tests {
     #[test]
     fn test_hash_join_full() {
         let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
         ];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -453,13 +637,43 @@ mod tests {
     #[test]
     fn test_merge_join_left() {
         let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
-            (ItemPointerData { page_id: PageId(1), offset: 2 }, make_row(&["4", "Dave"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 2,
+                },
+                make_row(&["4", "Dave"]),
+            ),
         ];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -481,12 +695,28 @@ mod tests {
 
     #[test]
     fn test_merge_join_right() {
-        let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-        ];
+        let left = vec![(
+            ItemPointerData {
+                page_id: PageId(1),
+                offset: 0,
+            },
+            make_row(&["1", "Alice"]),
+        )];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -507,12 +737,36 @@ mod tests {
     #[test]
     fn test_merge_join_full() {
         let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-            (ItemPointerData { page_id: PageId(1), offset: 1 }, make_row(&["2", "Bob"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 0,
+                },
+                make_row(&["1", "Alice"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(1),
+                    offset: 1,
+                },
+                make_row(&["2", "Bob"]),
+            ),
         ];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["3", "300"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["3", "300"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -528,12 +782,28 @@ mod tests {
 
     #[test]
     fn test_hash_join_multiple_matches() {
-        let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-        ];
+        let left = vec![(
+            ItemPointerData {
+                page_id: PageId(1),
+                offset: 0,
+            },
+            make_row(&["1", "Alice"]),
+        )];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["1", "200"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["1", "200"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -549,12 +819,28 @@ mod tests {
 
     #[test]
     fn test_merge_join_multiple_matches() {
-        let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-        ];
+        let left = vec![(
+            ItemPointerData {
+                page_id: PageId(1),
+                offset: 0,
+            },
+            make_row(&["1", "Alice"]),
+        )];
         let right = vec![
-            (ItemPointerData { page_id: PageId(2), offset: 0 }, make_row(&["1", "100"])),
-            (ItemPointerData { page_id: PageId(2), offset: 1 }, make_row(&["1", "200"])),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 0,
+                },
+                make_row(&["1", "100"]),
+            ),
+            (
+                ItemPointerData {
+                    page_id: PageId(2),
+                    offset: 1,
+                },
+                make_row(&["1", "200"]),
+            ),
         ];
 
         let on_expr = Expr::BinaryOp {
@@ -602,9 +888,13 @@ mod tests {
 
     #[test]
     fn test_merge_join_left_empty_right() {
-        let left = vec![
-            (ItemPointerData { page_id: PageId(1), offset: 0 }, make_row(&["1", "Alice"])),
-        ];
+        let left = vec![(
+            ItemPointerData {
+                page_id: PageId(1),
+                offset: 0,
+            },
+            make_row(&["1", "Alice"]),
+        )];
         let right: Vec<(ItemPointerData, Row)> = vec![];
 
         let on_expr = Expr::BinaryOp {

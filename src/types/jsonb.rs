@@ -17,8 +17,14 @@ impl JsonbValue {
             JsonValue::Bool(b) => JsonbValue::Bool(b),
             JsonValue::Number(n) => JsonbValue::Number(n.as_f64().unwrap_or(0.0)),
             JsonValue::String(s) => JsonbValue::String(s),
-            JsonValue::Array(arr) => JsonbValue::Array(arr.into_iter().map(Self::from_serde).collect()),
-            JsonValue::Object(map) => JsonbValue::Object(map.into_iter().map(|(k, v)| (k, Self::from_serde(v))).collect()),
+            JsonValue::Array(arr) => {
+                JsonbValue::Array(arr.into_iter().map(Self::from_serde).collect())
+            }
+            JsonValue::Object(map) => JsonbValue::Object(
+                map.into_iter()
+                    .map(|(k, v)| (k, Self::from_serde(v)))
+                    .collect(),
+            ),
         }
     }
 
@@ -26,11 +32,14 @@ impl JsonbValue {
         match self {
             JsonbValue::Null => JsonValue::Null,
             JsonbValue::Bool(b) => JsonValue::Bool(*b),
-            JsonbValue::Number(n) => JsonValue::Number(serde_json::Number::from_f64(*n).unwrap_or_else(|| serde_json::Number::from(0))),
+            JsonbValue::Number(n) => JsonValue::Number(
+                serde_json::Number::from_f64(*n).unwrap_or_else(|| serde_json::Number::from(0)),
+            ),
             JsonbValue::String(s) => JsonValue::String(s.clone()),
             JsonbValue::Array(arr) => JsonValue::Array(arr.iter().map(|v| v.to_serde()).collect()),
             JsonbValue::Object(obj) => {
-                let map: serde_json::Map<String, JsonValue> = obj.iter().map(|(k, v)| (k.clone(), v.to_serde())).collect();
+                let map: serde_json::Map<String, JsonValue> =
+                    obj.iter().map(|(k, v)| (k.clone(), v.to_serde())).collect();
                 JsonValue::Object(map)
             }
         }
@@ -87,11 +96,11 @@ pub fn jsonb_path_text(json: &JsonbValue, path: &[&str]) -> Option<String> {
 
 pub fn jsonb_contains(json: &JsonbValue, other: &JsonbValue) -> bool {
     match (json, other) {
-        (JsonbValue::Object(a), JsonbValue::Object(b)) => {
-            b.iter().all(|(k, v)| {
-                a.iter().find(|(ak, _)| ak == k).map_or(false, |(_, av)| jsonb_contains(av, v))
-            })
-        }
+        (JsonbValue::Object(a), JsonbValue::Object(b)) => b.iter().all(|(k, v)| {
+            a.iter()
+                .find(|(ak, _)| ak == k)
+                .map_or(false, |(_, av)| jsonb_contains(av, v))
+        }),
         (JsonbValue::Array(a), JsonbValue::Array(b)) => {
             b.iter().all(|bv| a.iter().any(|av| jsonb_contains(av, bv)))
         }
@@ -171,28 +180,41 @@ pub fn jsonb_delete(json: &JsonbValue, path: &[&str]) -> JsonbValue {
             if rest.is_empty() {
                 JsonbValue::Object(obj.iter().filter(|(k, _)| k != *first).cloned().collect())
             } else {
-                let new_obj: Vec<(String, JsonbValue)> = obj.iter().map(|(k, v)| {
-                    if k == *first {
-                        (k.clone(), jsonb_delete(v, rest))
-                    } else {
-                        (k.clone(), v.clone())
-                    }
-                }).collect();
+                let new_obj: Vec<(String, JsonbValue)> = obj
+                    .iter()
+                    .map(|(k, v)| {
+                        if k == *first {
+                            (k.clone(), jsonb_delete(v, rest))
+                        } else {
+                            (k.clone(), v.clone())
+                        }
+                    })
+                    .collect();
                 JsonbValue::Object(new_obj)
             }
         }
         JsonbValue::Array(arr) => {
             if rest.is_empty() {
                 let idx: usize = first.parse().unwrap_or(0);
-                JsonbValue::Array(arr.iter().enumerate().filter(|(i, _)| *i != idx).map(|(_, v)| v.clone()).collect())
+                JsonbValue::Array(
+                    arr.iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != idx)
+                        .map(|(_, v)| v.clone())
+                        .collect(),
+                )
             } else {
-                let new_arr: Vec<JsonbValue> = arr.iter().enumerate().map(|(i, v)| {
-                    if i.to_string() == *first {
-                        jsonb_delete(v, rest)
-                    } else {
-                        v.clone()
-                    }
-                }).collect();
+                let new_arr: Vec<JsonbValue> = arr
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        if i.to_string() == *first {
+                            jsonb_delete(v, rest)
+                        } else {
+                            v.clone()
+                        }
+                    })
+                    .collect();
                 JsonbValue::Array(new_arr)
             }
         }

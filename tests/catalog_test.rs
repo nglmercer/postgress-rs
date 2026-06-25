@@ -1,6 +1,6 @@
-use postgress_rs::storage::ephemeral::EphemeralStorage;
 use postgress_rs::buffer_cache::SharedBufferCache;
 use postgress_rs::catalog::Catalog;
+use postgress_rs::storage::ephemeral::EphemeralStorage;
 use postgress_rs::types::{Oid, Relation};
 use std::sync::Arc;
 
@@ -57,9 +57,18 @@ async fn test_list_relations_empty() {
 #[tokio::test]
 async fn test_list_relations_multiple() {
     let (_, _, catalog) = setup();
-    catalog.create_relation(Relation::empty("t1", vec![])).await.unwrap();
-    catalog.create_relation(Relation::empty("t2", vec![])).await.unwrap();
-    catalog.create_relation(Relation::empty("t3", vec![])).await.unwrap();
+    catalog
+        .create_relation(Relation::empty("t1", vec![]))
+        .await
+        .unwrap();
+    catalog
+        .create_relation(Relation::empty("t2", vec![]))
+        .await
+        .unwrap();
+    catalog
+        .create_relation(Relation::empty("t3", vec![]))
+        .await
+        .unwrap();
     let rels = catalog.list_relations();
     assert_eq!(rels.len(), 3);
 }

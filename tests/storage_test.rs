@@ -105,7 +105,8 @@ async fn test_mmap_storage_large_page_id() {
 #[tokio::test]
 async fn test_mmap_storage_as_trait_object() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
-    let storage: Arc<dyn StorageTrait> = Arc::new(MmapStorage::open(tmp.path(), 8192).await.unwrap());
+    let storage: Arc<dyn StorageTrait> =
+        Arc::new(MmapStorage::open(tmp.path(), 8192).await.unwrap());
     let data = vec![42u8; 8192];
     storage.write_page(PageId(0), &data).unwrap();
     let read = storage.read_page(PageId(0)).unwrap();

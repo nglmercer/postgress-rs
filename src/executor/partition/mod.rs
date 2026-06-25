@@ -1,7 +1,7 @@
 pub mod pruning;
 
-use crate::types::Oid;
 use crate::sql::ast::Expr;
+use crate::types::Oid;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PartitionStrategy {
@@ -90,30 +90,28 @@ impl PartitionManager {
     pub fn find_partition_for_value(&self, column_value: &str) -> Option<&PartitionEntry> {
         let cv = column_value.to_string();
         match &self.strategy {
-            PartitionStrategy::Range => {
-                self.partitions.iter().find(|p| {
-                    if let PartitionBound::Range(bounds) = &p.bound {
-                        bounds.iter().any(|b| {
-                            if b.inclusive {
-                                cv <= *b.values.first().unwrap_or(&String::new())
-                            } else {
-                                cv < *b.values.first().unwrap_or(&String::new())
-                            }
-                        })
-                    } else {
-                        false
-                    }
-                })
-            }
-            PartitionStrategy::List => {
-                self.partitions.iter().find(|p| {
-                    if let PartitionBound::List(bounds) = &p.bound {
-                        bounds.iter().any(|b| b.values.contains(&column_value.to_string()))
-                    } else {
-                        false
-                    }
-                })
-            }
+            PartitionStrategy::Range => self.partitions.iter().find(|p| {
+                if let PartitionBound::Range(bounds) = &p.bound {
+                    bounds.iter().any(|b| {
+                        if b.inclusive {
+                            cv <= *b.values.first().unwrap_or(&String::new())
+                        } else {
+                            cv < *b.values.first().unwrap_or(&String::new())
+                        }
+                    })
+                } else {
+                    false
+                }
+            }),
+            PartitionStrategy::List => self.partitions.iter().find(|p| {
+                if let PartitionBound::List(bounds) = &p.bound {
+                    bounds
+                        .iter()
+                        .any(|b| b.values.contains(&column_value.to_string()))
+                } else {
+                    false
+                }
+            }),
             PartitionStrategy::Hash => {
                 let hash = self.hash_value(column_value);
                 self.partitions.iter().find(|p| {
@@ -142,14 +140,19 @@ mod tests {
 
     #[test]
     fn test_partition_manager_new() {
-        let pm = PartitionManager::new(Oid(1), PartitionStrategy::Range, vec!["created_at".to_string()]);
+        let pm = PartitionManager::new(
+            Oid(1),
+            PartitionStrategy::Range,
+            vec!["created_at".to_string()],
+        );
         assert_eq!(pm.get_parent_oid(), Oid(1));
         assert_eq!(pm.partition_count(), 0);
     }
 
     #[test]
     fn test_partition_manager_range() {
-        let mut pm = PartitionManager::new(Oid(1), PartitionStrategy::Range, vec!["id".to_string()]);
+        let mut pm =
+            PartitionManager::new(Oid(1), PartitionStrategy::Range, vec!["id".to_string()]);
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(2),
             bound: PartitionBound::Range(vec![RangeBound {
@@ -162,7 +165,8 @@ mod tests {
 
     #[test]
     fn test_partition_manager_list() {
-        let mut pm = PartitionManager::new(Oid(1), PartitionStrategy::List, vec!["region".to_string()]);
+        let mut pm =
+            PartitionManager::new(Oid(1), PartitionStrategy::List, vec!["region".to_string()]);
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(2),
             bound: PartitionBound::List(vec![ListBound {
@@ -178,11 +182,17 @@ mod tests {
         let mut pm = PartitionManager::new(Oid(1), PartitionStrategy::Hash, vec!["id".to_string()]);
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(2),
-            bound: PartitionBound::Hash(HashBound { modulus: 4, remainder: 0 }),
+            bound: PartitionBound::Hash(HashBound {
+                modulus: 4,
+                remainder: 0,
+            }),
         });
         pm.add_partition(PartitionEntry {
             partition_oid: Oid(3),
-            bound: PartitionBound::Hash(HashBound { modulus: 4, remainder: 1 }),
+            bound: PartitionBound::Hash(HashBound {
+                modulus: 4,
+                remainder: 1,
+            }),
         });
         assert_eq!(pm.partition_count(), 2);
     }

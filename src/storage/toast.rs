@@ -100,10 +100,7 @@ mod tests {
 
     #[test]
     fn test_detoast_chunks() {
-        let chunks = vec![
-            (1u32, vec![1, 2, 3]),
-            (0u32, vec![4, 5, 6]),
-        ];
+        let chunks = vec![(1u32, vec![1, 2, 3]), (0u32, vec![4, 5, 6])];
         let result = ToastStorage::detoast_chunks(&chunks, 6);
         assert_eq!(result, vec![4, 5, 6, 1, 2, 3]);
     }

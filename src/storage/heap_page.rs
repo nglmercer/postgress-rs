@@ -130,7 +130,8 @@ impl HeapPage {
                     if !tuple_data.is_empty() {
                         tuple_offset -= tuple_data.len();
                         lp.lp_offset = tuple_offset as u16;
-                        page[tuple_offset..tuple_offset + tuple_data.len()].copy_from_slice(tuple_data);
+                        page[tuple_offset..tuple_offset + tuple_data.len()]
+                            .copy_from_slice(tuple_data);
                     }
                 }
             } else {
@@ -199,7 +200,7 @@ impl HeapPage {
 
     pub fn add_tuple(&mut self, tuple_data: &[u8]) -> Option<u16> {
         let tuple_len = tuple_data.len();
-        
+
         let mut slot_index = None;
         for i in 0..self.line_pointers.len() {
             if self.line_pointers[i].lp_flags == LP_DEAD {
@@ -257,7 +258,8 @@ impl HeapPage {
         self.line_pointers = new_line_pointers;
         self.tuples = new_tuples;
 
-        self.header.pd_lower = (PAGE_HEADER_SIZE + self.line_pointers.len() * LINE_POINTER_SIZE) as u16;
+        self.header.pd_lower =
+            (PAGE_HEADER_SIZE + self.line_pointers.len() * LINE_POINTER_SIZE) as u16;
 
         let mut total_len = 0;
         for i in 0..self.line_pointers.len() {
