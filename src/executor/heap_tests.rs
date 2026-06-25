@@ -125,8 +125,7 @@ mod tests {
         };
         let filter_col = filter.column;
         let expected = String::from_utf8_lossy(&filter.value);
-        let matches =
-            row[filter_col].contains(&*expected) || row[filter_col] == expected;
+        let matches = row[filter_col].contains(&*expected) || row[filter_col] == expected;
         assert!(matches);
     }
 
@@ -139,8 +138,7 @@ mod tests {
         };
         let filter_col = filter.column;
         let expected = String::from_utf8_lossy(&filter.value);
-        let matches =
-            row[filter_col].contains(&*expected) || row[filter_col] == expected;
+        let matches = row[filter_col].contains(&*expected) || row[filter_col] == expected;
         assert!(!matches);
     }
 

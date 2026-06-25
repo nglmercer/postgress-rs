@@ -1,12 +1,10 @@
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TimeoutConfig {
     pub statement_timeout: Option<Duration>,
     pub lock_timeout: Option<Duration>,
 }
-
 
 impl TimeoutConfig {
     pub fn new() -> Self {

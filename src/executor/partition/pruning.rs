@@ -28,30 +28,28 @@ impl PartitionPruner {
 
     fn extract_equality_predicate(expr: &Expr) -> Option<(String, String)> {
         match expr {
-            Expr::BinaryOp { left, op, right } => {
-                match op {
-                    crate::sql::ast::BinaryOperator::Equals => {
-                        if let Expr::Identifier(col) = left.as_ref() {
-                            if let Expr::Literal(lit) = right.as_ref() {
-                                let value = match lit {
-                                    crate::sql::ast::Literal::String(s) => s.clone(),
-                                    crate::sql::ast::Literal::Number(n) => n.clone(),
-                                    _ => return None,
-                                };
-                                return Some((col.clone(), value));
-                            }
+            Expr::BinaryOp { left, op, right } => match op {
+                crate::sql::ast::BinaryOperator::Equals => {
+                    if let Expr::Identifier(col) = left.as_ref() {
+                        if let Expr::Literal(lit) = right.as_ref() {
+                            let value = match lit {
+                                crate::sql::ast::Literal::String(s) => s.clone(),
+                                crate::sql::ast::Literal::Number(n) => n.clone(),
+                                _ => return None,
+                            };
+                            return Some((col.clone(), value));
                         }
-                        None
                     }
-                    crate::sql::ast::BinaryOperator::And => {
-                        if let Some(result) = Self::extract_equality_predicate(left.as_ref()) {
-                            return Some(result);
-                        }
-                        Self::extract_equality_predicate(right.as_ref())
-                    }
-                    _ => None,
+                    None
                 }
-            }
+                crate::sql::ast::BinaryOperator::And => {
+                    if let Some(result) = Self::extract_equality_predicate(left.as_ref()) {
+                        return Some(result);
+                    }
+                    Self::extract_equality_predicate(right.as_ref())
+                }
+                _ => None,
+            },
             _ => None,
         }
     }

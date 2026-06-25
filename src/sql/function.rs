@@ -189,7 +189,6 @@ impl Default for FunctionRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_function_def() {

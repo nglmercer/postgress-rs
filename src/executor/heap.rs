@@ -268,9 +268,7 @@ pub async fn slow_scan(
                     let filter_col = filter.column;
                     if filter_col < row.len() {
                         let expected = String::from_utf8_lossy(&filter.value);
-                        if !row[filter_col].contains(&*expected)
-                            && row[filter_col] != expected
-                        {
+                        if !row[filter_col].contains(&*expected) && row[filter_col] != expected {
                             continue;
                         }
                     }
@@ -456,8 +454,7 @@ pub async fn tuple_update(
                 let row = decode_tuple_values(&tup, &tuple_desc);
                 let should_update = filter.as_ref().is_none_or(|f| {
                     let filter_col = f.column;
-                    filter_col < row.len()
-                        && row[filter_col] == String::from_utf8_lossy(&f.value)
+                    filter_col < row.len() && row[filter_col] == String::from_utf8_lossy(&f.value)
                 });
 
                 if should_update {
@@ -564,8 +561,7 @@ pub async fn tuple_delete(
                 let row = decode_tuple_values(&tup, &tuple_desc);
                 let should_delete = filter.as_ref().is_none_or(|f| {
                     let filter_col = f.column;
-                    filter_col < row.len()
-                        && row[filter_col] == String::from_utf8_lossy(&f.value)
+                    filter_col < row.len() && row[filter_col] == String::from_utf8_lossy(&f.value)
                 });
 
                 if should_delete {
@@ -638,17 +634,18 @@ pub async fn vacuum_relation(
 
         for slot_idx in 0..heap_page.line_pointers.len() {
             if heap_page.line_pointers[slot_idx].lp_flags == crate::storage::heap_page::LP_NORMAL
-                && slot_idx < heap_page.tuples.len() {
-                    let tuple_data = &heap_page.tuples[slot_idx];
-                    if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
-                        if tup.xmax != 0 && tup.xmax < oldest_xmin as u64 {
-                            heap_page.line_pointers[slot_idx].lp_flags =
-                                crate::storage::heap_page::LP_DEAD;
-                            modified = true;
-                            reclaimed_tuples += 1;
-                        }
+                && slot_idx < heap_page.tuples.len()
+            {
+                let tuple_data = &heap_page.tuples[slot_idx];
+                if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
+                    if tup.xmax != 0 && tup.xmax < oldest_xmin as u64 {
+                        heap_page.line_pointers[slot_idx].lp_flags =
+                            crate::storage::heap_page::LP_DEAD;
+                        modified = true;
+                        reclaimed_tuples += 1;
                     }
                 }
+            }
         }
 
         if modified {

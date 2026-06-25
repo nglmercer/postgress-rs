@@ -172,8 +172,7 @@ impl HeapPage {
     pub fn deserialize(data: &[u8]) -> Self {
         let header = PageHeader::deserialize(data);
 
-        let num_line_pointers =
-            (header.pd_lower as usize - PAGE_HEADER_SIZE) / LINE_POINTER_SIZE;
+        let num_line_pointers = (header.pd_lower as usize - PAGE_HEADER_SIZE) / LINE_POINTER_SIZE;
         let mut line_pointers = Vec::with_capacity(num_line_pointers);
 
         for i in 0..num_line_pointers {
@@ -273,10 +272,9 @@ impl HeapPage {
 
         let mut total_len = 0;
         for i in 0..self.line_pointers.len() {
-            if self.line_pointers[i].lp_flags == LP_NORMAL
-                && i < self.tuples.len() {
-                    total_len += self.tuples[i].len();
-                }
+            if self.line_pointers[i].lp_flags == LP_NORMAL && i < self.tuples.len() {
+                total_len += self.tuples[i].len();
+            }
         }
         self.header.pd_upper = (PAGE_SIZE - total_len) as u16;
     }

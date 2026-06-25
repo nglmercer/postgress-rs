@@ -202,11 +202,13 @@ impl<'a> ExecContext<'a> {
                         .iter()
                         .position(|n| n.eq_ignore_ascii_case(col));
                     if let (Some(li), Some(ri)) = (left_idx, right_idx) {
-                        if li < lrow.len() && (right_start + ri) < (right_start + rrow.len())
-                            && lrow[li] != rrow[ri] {
-                                match_all = false;
-                                break;
-                            }
+                        if li < lrow.len()
+                            && (right_start + ri) < (right_start + rrow.len())
+                            && lrow[li] != rrow[ri]
+                        {
+                            match_all = false;
+                            break;
+                        }
                     }
                 }
                 if match_all {

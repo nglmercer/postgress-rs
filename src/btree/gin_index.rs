@@ -164,10 +164,7 @@ mod tests {
         let mut index = GinIndex::new(Oid(1), Oid(100), GinIndexType::Array);
         let values = vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()];
         index.insert_array_values(&values, (PageId(1), 0));
-        index.insert_array_values(
-            &["tag1".to_string(), "tag2".to_string()],
-            (PageId(1), 1),
-        );
+        index.insert_array_values(&["tag1".to_string(), "tag2".to_string()], (PageId(1), 1));
 
         let query = vec!["tag1".to_string(), "tag2".to_string()];
         let results = index.contains(&query);

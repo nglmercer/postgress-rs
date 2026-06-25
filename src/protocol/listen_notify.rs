@@ -69,7 +69,6 @@ impl Default for NotifyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     #[test]
     fn test_notify_manager_new() {
