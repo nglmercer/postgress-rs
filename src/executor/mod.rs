@@ -3,6 +3,7 @@ pub mod btree;
 pub mod planner;
 pub mod select;
 pub mod parallel;
+pub mod partition;
 
 #[cfg(test)]
 pub mod heap_tests;
@@ -14,3 +15,4 @@ pub use crate::btree::scan::{BTreeScan, ScanDirection};
 pub use planner::{Plan, SeqScan, IndexScanPlan, Planner};
 pub use select::{execute_select, SelectResult};
 pub use parallel::{ParallelContext, ParallelWorker};
+pub use partition::{PartitionManager, PartitionSpec, PartitionStrategy};

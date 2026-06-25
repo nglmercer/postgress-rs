@@ -88,15 +88,16 @@ impl PartitionManager {
     }
 
     pub fn find_partition_for_value(&self, column_value: &str) -> Option<&PartitionEntry> {
+        let cv = column_value.to_string();
         match &self.strategy {
             PartitionStrategy::Range => {
                 self.partitions.iter().find(|p| {
                     if let PartitionBound::Range(bounds) = &p.bound {
                         bounds.iter().any(|b| {
                             if b.inclusive {
-                                column_value <= b.values.first().unwrap_or(&String::new())
+                                cv <= *b.values.first().unwrap_or(&String::new())
                             } else {
-                                column_value < b.values.first().unwrap_or(&String::new())
+                                cv < *b.values.first().unwrap_or(&String::new())
                             }
                         })
                     } else {

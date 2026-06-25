@@ -27,7 +27,7 @@ impl PartitionPruner {
     fn extract_equality_predicate(expr: &Expr) -> Option<(String, String)> {
         match expr {
             Expr::BinaryOp { left, op, right } => {
-                if let crate::sql::ast::BinaryOperator::Eq = op {
+                if let crate::sql::ast::BinaryOperator::Equals = op {
                     if let Expr::Identifier(col) = left.as_ref() {
                         if let Expr::Literal(lit) = right.as_ref() {
                             let value = match lit {
@@ -109,7 +109,7 @@ mod tests {
 
         let where_clause = Expr::BinaryOp {
             left: Box::new(Expr::Identifier("region".to_string())),
-            op: BinaryOperator::Eq,
+            op: BinaryOperator::Equals,
             right: Box::new(Expr::Literal(Literal::String("us-east".to_string()))),
         };
 
