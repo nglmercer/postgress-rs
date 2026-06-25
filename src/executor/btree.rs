@@ -5,6 +5,8 @@ use crate::btree::{
 use crate::storage::StorageTrait;
 use crate::types::{Oid, PageId};
 
+type BtreeScanResult = (Vec<u8>, (PageId, u16));
+
 pub struct BTreeScan {
     pub index_oid: Oid,
     pub scan_from: Vec<u8>,
@@ -45,7 +47,7 @@ pub fn btree_scan(
     op: &BTreeScan,
     root_page: PageId,
     page_size: usize,
-) -> anyhow::Result<Vec<(Vec<u8>, (PageId, u16))>> {
+) -> anyhow::Result<Vec<BtreeScanResult>> {
     let results = btree_search(storage, root_page, &op.scan_from, page_size)?;
     Ok(results
         .into_iter()

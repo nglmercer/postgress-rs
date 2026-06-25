@@ -58,14 +58,14 @@ pub enum PlanNodeType {
 
 pub struct CostOptimizer {
     stats: StatisticsCollector,
-    table_costs: HashMap<String, CostEstimate>,
+    _table_costs: HashMap<String, CostEstimate>,
 }
 
 impl CostOptimizer {
     pub fn new(stats: StatisticsCollector) -> Self {
         Self {
             stats,
-            table_costs: HashMap::new(),
+            _table_costs: HashMap::new(),
         }
     }
 

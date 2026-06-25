@@ -5,7 +5,7 @@ use crate::sql::ast::*;
 impl<'a> ExecContext<'a> {
     pub fn apply_window_functions(
         &self,
-        rows: &mut Vec<Row>,
+        rows: &mut [Row],
         select_list: &[SelectItem],
     ) -> anyhow::Result<()> {
         for (i, item) in select_list.iter().enumerate() {
@@ -42,7 +42,7 @@ impl<'a> ExecContext<'a> {
 
     fn compute_window_function(
         &self,
-        rows: &mut Vec<Row>,
+        rows: &mut [Row],
         col_idx: usize,
         func_name: &str,
         func: &FunctionCall,
