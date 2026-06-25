@@ -123,7 +123,7 @@ impl XLogRecord {
 pub fn compute_crc(data: &[u8]) -> u32 {
     let mut crc = 0xFFFFFFFFu32;
     for &byte in data {
-        crc = crc ^ (byte as u32);
+        crc ^= byte as u32 ;
         for _ in 0..8 {
             if crc & 1 != 0 {
                 crc = (crc >> 1) ^ 0xEDB88320;
@@ -449,7 +449,7 @@ mod tests {
         let data = vec![1, 2, 3, 4];
         let record = XLogRecord::new(100, 0, RmgrId::Heap as u8, &data);
         assert!(record.verify_crc(&data));
-        assert!(!record.verify_crc(&vec![1, 2, 3, 5]));
+        assert!(!record.verify_crc(&[1, 2, 3, 5]));
     }
 
     #[test]

@@ -134,7 +134,7 @@ impl StatisticsCollector {
         table_oid: Oid,
         column_name: &str,
         op: &str,
-        value: &str,
+        _value: &str,
     ) -> f64 {
         if let Some(stats) = self.get_column_stats(table_oid, column_name) {
             match op {

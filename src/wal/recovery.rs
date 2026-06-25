@@ -1,5 +1,5 @@
 use crate::storage::StorageTrait;
-use crate::types::{Oid, PageId};
+use crate::types::PageId;
 use crate::wal::{ControlFile, WALRecord};
 use std::path::Path;
 use std::sync::Arc;

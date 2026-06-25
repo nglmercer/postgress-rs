@@ -202,13 +202,13 @@ impl RbacManager {
         self.acls.push(acl);
     }
 
-    pub fn revoke(&mut self, grantee: Oid, rel_oid: Oid, privileges: &PrivilegeSet) {
+    pub fn revoke(&mut self, grantee: Oid, rel_oid: Oid, _privileges: &PrivilegeSet) {
         self.acls
             .retain(|acl| acl.grantee != grantee || acl.rel_oid != rel_oid);
     }
 
     pub fn check_privilege(&self, role_oid: Oid, rel_oid: Oid, required: &PrivilegeSet) -> bool {
-        if let Some(role) = self.roles.values().find(|r| Oid(0) == role_oid) {
+        if let Some(role) = self.roles.values().find(|_r| Oid(0) == role_oid) {
             if role.rolsuper {
                 return true;
             }

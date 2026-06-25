@@ -189,7 +189,7 @@ impl Default for FunctionRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::ast::{BinaryOperator, Literal};
+    
 
     #[test]
     fn test_function_def() {

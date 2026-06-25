@@ -125,7 +125,7 @@ impl RlsFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql::ast::{BinaryOperator, Expr};
+    use crate::sql::ast::Expr;
 
     #[test]
     fn test_policy_new() {

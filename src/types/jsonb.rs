@@ -63,9 +63,9 @@ pub fn jsonb_get(json: &JsonbValue, key: &str) -> Option<JsonbValue> {
 }
 
 pub fn jsonb_get_text(json: &JsonbValue, key: &str) -> Option<String> {
-    jsonb_get(json, key).and_then(|v| match v {
-        JsonbValue::String(s) => Some(s),
-        other => Some(other.to_string_pretty()),
+    jsonb_get(json, key).map(|v| match v {
+        JsonbValue::String(s) => s,
+        other => other.to_string_pretty(),
     })
 }
 
@@ -99,7 +99,7 @@ pub fn jsonb_contains(json: &JsonbValue, other: &JsonbValue) -> bool {
         (JsonbValue::Object(a), JsonbValue::Object(b)) => b.iter().all(|(k, v)| {
             a.iter()
                 .find(|(ak, _)| ak == k)
-                .map_or(false, |(_, av)| jsonb_contains(av, v))
+                .is_some_and(|(_, av)| jsonb_contains(av, v))
         }),
         (JsonbValue::Array(a), JsonbValue::Array(b)) => {
             b.iter().all(|bv| a.iter().any(|av| jsonb_contains(av, bv)))

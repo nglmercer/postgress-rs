@@ -78,7 +78,7 @@ impl GinIndex {
                         continue 'outer;
                     }
                 }
-                result.push(tid.clone());
+                result.push(*tid);
             }
         }
 
@@ -92,8 +92,8 @@ impl GinIndex {
         for value in values {
             if let Some(tids) = self.entries.get(value) {
                 for tid in tids {
-                    if seen.insert(tid.clone()) {
-                        result.push(tid.clone());
+                    if seen.insert(*tid) {
+                        result.push(*tid);
                     }
                 }
             }
@@ -165,7 +165,7 @@ mod tests {
         let values = vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()];
         index.insert_array_values(&values, (PageId(1), 0));
         index.insert_array_values(
-            &vec!["tag1".to_string(), "tag2".to_string()],
+            &["tag1".to_string(), "tag2".to_string()],
             (PageId(1), 1),
         );
 
@@ -177,9 +177,9 @@ mod tests {
     #[test]
     fn test_any_contains() {
         let mut index = GinIndex::new(Oid(1), Oid(100), GinIndexType::Array);
-        index.insert_array_values(&vec!["tag1".to_string()], (PageId(1), 0));
-        index.insert_array_values(&vec!["tag2".to_string()], (PageId(1), 1));
-        index.insert_array_values(&vec!["tag3".to_string()], (PageId(1), 2));
+        index.insert_array_values(&["tag1".to_string()], (PageId(1), 0));
+        index.insert_array_values(&["tag2".to_string()], (PageId(1), 1));
+        index.insert_array_values(&["tag3".to_string()], (PageId(1), 2));
 
         let query = vec!["tag1".to_string(), "tag3".to_string()];
         let results = index.any_contains(&query);
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn test_lookup_full_text_case_insensitive() {
         let mut index = GinIndex::new(Oid(1), Oid(100), GinIndexType::FullText);
-        index.insert_full_text(&vec!["Hello".to_string()], (PageId(1), 0));
+        index.insert_full_text(&["Hello".to_string()], (PageId(1), 0));
 
         let results = index.lookup("hello");
         assert_eq!(results.len(), 1);
@@ -217,7 +217,7 @@ mod tests {
     fn test_delete() {
         let mut index = GinIndex::new(Oid(1), Oid(100), GinIndexType::Array);
         let tid = (PageId(1), 0);
-        index.insert_array_values(&vec!["tag1".to_string()], tid);
+        index.insert_array_values(&["tag1".to_string()], tid);
 
         assert!(index.delete("tag1", &tid));
         assert!(index.lookup("tag1").is_empty());
@@ -232,8 +232,8 @@ mod tests {
     #[test]
     fn test_scan() {
         let mut index = GinIndex::new(Oid(1), Oid(100), GinIndexType::Array);
-        index.insert_array_values(&vec!["tag1".to_string()], (PageId(1), 0));
-        index.insert_array_values(&vec!["tag2".to_string()], (PageId(1), 1));
+        index.insert_array_values(&["tag1".to_string()], (PageId(1), 0));
+        index.insert_array_values(&["tag2".to_string()], (PageId(1), 1));
 
         let entries = index.scan();
         assert_eq!(entries.len(), 2);

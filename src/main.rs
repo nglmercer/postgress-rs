@@ -1,6 +1,5 @@
 use clap::Parser;
 use postgress_rs::server::run;
-use tracing_subscriber;
 
 #[derive(Parser, Debug)]
 #[command(name = "postgress-rs", version, about, long_about = None)]
