@@ -18,8 +18,8 @@ pub struct AuthState {
 impl AuthState {
     pub fn start_auth(method: AuthMethod) -> Self {
         let mut salt = [0u8; 4];
-        for i in 0..4 {
-            salt[i] = (i as u8).wrapping_mul(7);
+        for (i, byte) in salt.iter_mut().enumerate() {
+            *byte = (i as u8).wrapping_mul(7);
         }
 
         Self {

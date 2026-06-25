@@ -1,5 +1,4 @@
 use crate::buffer_cache::SharedBufferCache;
-use crate::catalog::Catalog;
 use crate::executor::heap::{tuple_insert, TupleInsert};
 use crate::transaction::TransactionManager;
 use crate::types::Oid;
@@ -39,7 +38,7 @@ pub async fn handle_copy_in(
     let rel_state = cache
         .get_relation_state(state.rel_oid)
         .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
-    let tuple_desc = {
+    let _tuple_desc = {
         let rel = rel_state.lock();
         rel.relation.tuple_desc.clone()
     };
@@ -55,7 +54,7 @@ pub async fn handle_copy_in(
             cmax: 0,
             xvac: 0,
         };
-        let encoded = bincode::serialize(&tuple)?;
+        let _encoded = bincode::serialize(&tuple)?;
 
         let insert_op = TupleInsert {
             rel_oid: state.rel_oid,

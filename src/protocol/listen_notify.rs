@@ -23,7 +23,7 @@ impl NotifyManager {
         let (tx, rx) = mpsc::channel(100);
         self.channels
             .entry(channel.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(tx);
         rx
     }
@@ -69,7 +69,7 @@ impl Default for NotifyManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::runtime::Runtime;
+    
 
     #[test]
     fn test_notify_manager_new() {

@@ -10,6 +10,12 @@ pub struct Parser {
     buffer: Vec<u8>,
 }
 
+impl Default for Parser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Parser {
     pub fn new() -> Self {
         Self { buffer: Vec::new() }
@@ -49,11 +55,11 @@ fn parse_query(s: &str) -> Option<Query> {
 fn parse_query_legacy(s: &str) -> Option<Query> {
     let s_upper = s.trim().trim_end_matches(';').trim().to_uppercase();
     if s_upper.starts_with("BEGIN") || s_upper.starts_with("START TRANSACTION") {
-        return Some(Query::Begin { mode: None });
+        Some(Query::Begin { mode: None })
     } else if s_upper.starts_with("COMMIT") {
-        return Some(Query::Commit);
+        Some(Query::Commit)
     } else if s_upper.starts_with("ROLLBACK") || s_upper.starts_with("ABORT") {
-        return Some(Query::Rollback);
+        Some(Query::Rollback)
     } else if s_upper.starts_with("SELECT") {
         parse_select(s)
     } else if s_upper.starts_with("INSERT") {
@@ -150,7 +156,7 @@ fn parse_create_table(s: &str) -> Option<Query> {
 
     let mut columns = Vec::new();
     for col_def in cols_str.split(',') {
-        let parts: Vec<&str> = col_def.trim().split_whitespace().collect();
+        let parts: Vec<&str> = col_def.split_whitespace().collect();
         if parts.len() >= 2 {
             let col_name = parts[0].to_string();
             let col_type = parts[1];

@@ -25,6 +25,12 @@ pub struct ExtendedQueryState {
     unnamed_portal: Option<Portal>,
 }
 
+impl Default for ExtendedQueryState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ExtendedQueryState {
     pub fn new() -> Self {
         Self {
