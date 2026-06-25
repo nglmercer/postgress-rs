@@ -44,20 +44,14 @@ impl BTreeScan {
 pub struct SkipScanIterator<'a> {
     entries: &'a [(Vec<u8>, u32, u16)],
     position: usize,
-    direction: ScanDirection,
     skip_duplicates: bool,
 }
 
 impl<'a> SkipScanIterator<'a> {
-    pub fn new(
-        entries: &'a [(Vec<u8>, u32, u16)],
-        direction: ScanDirection,
-        skip_duplicates: bool,
-    ) -> Self {
+    pub fn new(entries: &'a [(Vec<u8>, u32, u16)], skip_duplicates: bool) -> Self {
         Self {
             entries,
             position: 0,
-            direction,
             skip_duplicates,
         }
     }
@@ -197,7 +191,7 @@ mod tests {
             (b"key3".to_vec(), 1, 4),
         ];
 
-        let mut iter = SkipScanIterator::new(&entries, ScanDirection::Forward, true);
+        let mut iter = SkipScanIterator::new(&entries, true);
         assert_eq!(iter.next_distinct().unwrap().0, b"key1");
         assert_eq!(iter.next_distinct().unwrap().0, b"key2");
         assert_eq!(iter.next_distinct().unwrap().0, b"key3");
@@ -212,7 +206,7 @@ mod tests {
             (b"key2".to_vec(), 1, 2),
         ];
 
-        let mut iter = SkipScanIterator::new(&entries, ScanDirection::Forward, false);
+        let mut iter = SkipScanIterator::new(&entries, false);
         assert_eq!(iter.next_distinct().unwrap().0, b"key1");
         assert_eq!(iter.next_distinct().unwrap().0, b"key1");
         assert_eq!(iter.next_distinct().unwrap().0, b"key2");

@@ -369,7 +369,7 @@ impl Default for BgWriterConfig {
 }
 
 pub struct BgWriter {
-    config: BgWriterConfig,
+    _config: BgWriterConfig,
     newly_dirtied: parking_lot::Mutex<usize>,
     bytes_written: parking_lot::Mutex<usize>,
 }
@@ -377,7 +377,7 @@ pub struct BgWriter {
 impl BgWriter {
     pub fn new(config: BgWriterConfig) -> Self {
         Self {
-            config,
+            _config: config,
             newly_dirtied: parking_lot::Mutex::new(0),
             bytes_written: parking_lot::Mutex::new(0),
         }

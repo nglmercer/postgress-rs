@@ -1,6 +1,9 @@
 use crate::types::{Oid, PageId};
 use std::collections::HashMap;
 
+type BrinValue = (PageId, u16);
+type BrinEntry = (String, BrinValue);
+
 #[derive(Debug, Clone)]
 pub struct BlockRangeSummary {
     pub block_start: u32,
@@ -16,7 +19,7 @@ pub struct BrinIndex {
     pub rel_oid: Oid,
     pub pages_per_range: u32,
     pub ranges: Vec<BlockRangeSummary>,
-    pub values: HashMap<u32, Vec<(String, (PageId, u16))>>,
+    pub values: HashMap<u32, Vec<BrinEntry>>,
 }
 
 impl BrinIndex {
