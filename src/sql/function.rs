@@ -188,14 +188,16 @@ mod tests {
     fn test_function_def() {
         let body = FunctionBody::SqlQuery(SelectStatement {
             with: None,
+            distinct: crate::sql::ast::DistinctClause::All,
             select_list: vec![],
             from: None,
             where_clause: None,
-            group_by: None,
+            group_by: vec![],
             having: None,
             order_by: vec![],
             limit: None,
             offset: None,
+            locking: vec![],
             set_operations: vec![],
         });
         let func = FunctionDef::new("get_count", body)
