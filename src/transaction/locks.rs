@@ -254,13 +254,10 @@ impl LockManager {
         for request in wait_queue.iter() {
             let mut blockers = Vec::new();
 
-            if request.page_id.is_some() {
-                // Row lock - check row locks
-                let key = (
-                    request.relation_oid,
-                    request.page_id.unwrap(),
-                    request.tuple_offset.unwrap(),
-                );
+            if let (Some(page_id), Some(tuple_offset)) =
+                (request.page_id, request.tuple_offset)
+            {
+                let key = (request.relation_oid, page_id, tuple_offset);
                 if let Some(locks) = row_locks.get(&key) {
                     for lock in locks {
                         if lock.holder != request.xid && request.mode.conflicts_with(&lock.mode) {

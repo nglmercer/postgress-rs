@@ -134,11 +134,9 @@ impl HeapPage {
         // Write tuples (from end of page backwards) and compute new line pointers
         let mut line_pointers = self.line_pointers.clone();
         let mut tuple_offset = PAGE_SIZE;
-        for i in 0..line_pointers.len() {
-            let lp = &mut line_pointers[i];
+        for (i, lp) in line_pointers.iter_mut().enumerate() {
             if lp.lp_flags == LP_NORMAL {
-                if i < self.tuples.len() {
-                    let tuple_data = &self.tuples[i];
+                if let Some(tuple_data) = self.tuples.get(i) {
                     if !tuple_data.is_empty() {
                         tuple_offset -= tuple_data.len();
                         lp.lp_offset = tuple_offset as u16;

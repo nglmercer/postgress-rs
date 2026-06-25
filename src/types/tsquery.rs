@@ -22,7 +22,7 @@ impl TsQuery {
         TsQuery::Or(Box::new(left), Box::new(right))
     }
 
-    pub fn not(inner: TsQuery) -> Self {
+    pub fn negate(inner: TsQuery) -> Self {
         TsQuery::Not(Box::new(inner))
     }
 
@@ -56,7 +56,7 @@ pub fn to_tsquery(query: &str) -> TsQuery {
     }
 
     if let Some(stripped) = query.strip_prefix('!') {
-        return TsQuery::not(to_tsquery(stripped));
+        return TsQuery::negate(to_tsquery(stripped));
     }
 
     TsQuery::Lexeme(query.to_string())

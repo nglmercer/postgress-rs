@@ -1,6 +1,7 @@
 use crate::sql::ast::Statement;
 use crate::types::Oid;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Query {
     Select {

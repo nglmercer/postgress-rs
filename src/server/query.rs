@@ -16,6 +16,7 @@ use crate::server::utils::{
     execute_drop_table, execute_seq_scan, execute_slow_scan, parse_filter, send_error,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub async fn handle_query(
     query: &Query,
     catalog: &Catalog,
