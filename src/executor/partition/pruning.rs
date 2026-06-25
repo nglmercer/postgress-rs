@@ -1,4 +1,4 @@
-use super::{PartitionEntry, PartitionManager};
+use super::PartitionManager;
 use crate::sql::ast::Expr;
 use crate::types::Oid;
 
@@ -29,28 +29,28 @@ impl PartitionPruner {
     fn extract_equality_predicate(expr: &Expr) -> Option<(String, String)> {
         match expr {
             Expr::BinaryOp { left, op, right } => {
-                if let crate::sql::ast::BinaryOperator::Equals = op {
-                    if let Expr::Identifier(col) = left.as_ref() {
-                        if let Expr::Literal(lit) = right.as_ref() {
-                            let value = match lit {
-                                crate::sql::ast::Literal::String(s) => s.clone(),
-                                crate::sql::ast::Literal::Number(n) => n.clone(),
-                                _ => return None,
-                            };
-                            return Some((col.clone(), value));
+                match op {
+                    crate::sql::ast::BinaryOperator::Equals => {
+                        if let Expr::Identifier(col) = left.as_ref() {
+                            if let Expr::Literal(lit) = right.as_ref() {
+                                let value = match lit {
+                                    crate::sql::ast::Literal::String(s) => s.clone(),
+                                    crate::sql::ast::Literal::Number(n) => n.clone(),
+                                    _ => return None,
+                                };
+                                return Some((col.clone(), value));
+                            }
                         }
+                        None
                     }
-                }
-                None
-            }
-            Expr::BinaryOp { left, op, right } => {
-                if let crate::sql::ast::BinaryOperator::And = op {
-                    if let Some(result) = Self::extract_equality_predicate(left.as_ref()) {
-                        return Some(result);
+                    crate::sql::ast::BinaryOperator::And => {
+                        if let Some(result) = Self::extract_equality_predicate(left.as_ref()) {
+                            return Some(result);
+                        }
+                        Self::extract_equality_predicate(right.as_ref())
                     }
-                    return Self::extract_equality_predicate(right.as_ref());
+                    _ => None,
                 }
-                None
             }
             _ => None,
         }
@@ -65,7 +65,7 @@ impl PartitionPruner {
             return 1.0;
         }
 
-        if let Some(entry) = Self::prune_partitions(where_clause, partition_manager).first() {
+        if let Some(_entry) = Self::prune_partitions(where_clause, partition_manager).first() {
             if Self::prune_partitions(where_clause, partition_manager).len() == 1 {
                 return 1.0 / total_partitions;
             }

@@ -1,6 +1,6 @@
 use crate::buffer_cache::SharedBufferCache;
-use crate::executor::heap::{heap_scan, heap_scan_with_optional_snapshot};
-use crate::executor::select::{execute_select, execute_select_with_snapshot, Row};
+use crate::executor::heap::heap_scan_with_optional_snapshot;
+use crate::executor::select::{execute_select_with_snapshot, Row};
 use crate::sql::ast::*;
 use crate::types::*;
 
@@ -127,7 +127,7 @@ impl<'a> ExecContext<'a> {
                         Expr::Identifier(col) => col.clone(),
                         Expr::Function(f) => {
                             let fname = f.name.parts.last().cloned().unwrap_or_default();
-                            format!("{}", fname)
+                            fname.to_string()
                         }
                         Expr::Literal(lit) => match lit {
                             Literal::Number(n) => n.clone(),

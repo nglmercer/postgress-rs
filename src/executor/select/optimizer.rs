@@ -1,5 +1,4 @@
 use crate::catalog::statistics::StatisticsCollector;
-use crate::executor::select::Row;
 use crate::sql::ast::*;
 use crate::types::*;
 use std::collections::HashMap;
@@ -72,7 +71,7 @@ impl CostOptimizer {
 
     pub fn estimate_seq_scan(
         &self,
-        table_name: &str,
+        _table_name: &str,
         table_oid: Oid,
         _selectivity: f64,
     ) -> CostEstimate {
@@ -95,9 +94,9 @@ impl CostOptimizer {
 
     pub fn estimate_index_scan(
         &self,
-        table_name: &str,
+        _table_name: &str,
         table_oid: Oid,
-        index_oid: Oid,
+        _index_oid: Oid,
         selectivity: f64,
     ) -> CostEstimate {
         let total_rows = self

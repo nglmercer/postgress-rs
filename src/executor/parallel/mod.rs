@@ -1,7 +1,6 @@
 pub mod worker;
 
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::sync::Barrier;
 

@@ -1,6 +1,5 @@
 use super::context::ExecContext;
 use crate::executor::select::Row;
-use crate::sql::ast::*;
 use crate::types::*;
 
 impl<'a> ExecContext<'a> {
