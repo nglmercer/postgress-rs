@@ -1,10 +1,9 @@
 use crate::types::{Oid, PageId};
 use crate::storage::StorageTrait;
-use crate::wal::{ControlFile, WALRecord, compute_crc};
+use crate::wal::{ControlFile, WALRecord};
 use std::sync::Arc;
 use std::path::Path;
 
-#[derive(Debug)]
 pub struct WalRecovery {
     control: ControlFile,
     storage: Arc<dyn StorageTrait>,
@@ -49,20 +48,14 @@ impl WalRecovery {
             };
 
             let mut offset = 0;
-            while offset + 24 < page_data.len() {
-                let record = WALRecord::deserialize(&page_data[offset..]);
-                if record.xl_tot_len == 0 {
-                    break;
-                }
+            while offset < page_data.len() {
+                let record = match bincode::deserialize::<WALRecord>(&page_data[offset..]) {
+                    Ok(r) => r,
+                    Err(_) => break,
+                };
 
-                let data_offset = offset + 24;
-                let data_len = (record.xl_tot_len as usize).saturating_sub(24);
-                if data_offset + data_len > page_data.len() {
-                    break;
-                }
-
-                let record_data = &page_data[data_offset..data_offset + data_len];
-                if !record.verify_crc(record_data) {
+                let data_len = bincode::serialize(&record).map(|d| d.len()).unwrap_or(0);
+                if data_len == 0 {
                     break;
                 }
 
@@ -72,8 +65,8 @@ impl WalRecovery {
                     records_replayed += 1;
                 }
 
-                offset += record.xl_tot_len as usize;
-                replayed_lsn = lsn + record.xl_tot_len as u64;
+                offset += data_len;
+                replayed_lsn = lsn + data_len as u64;
             }
         }
 
