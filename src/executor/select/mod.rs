@@ -41,7 +41,8 @@ pub async fn execute_select_with_snapshot(
     };
 
     let base_rows = if let Some(ref from) = select.from {
-        ctx.execute_from(from, select.where_clause.as_deref()).await?
+        ctx.execute_from(from, select.where_clause.as_deref())
+            .await?
     } else {
         ctx.execute_select_without_from(&select.select_list)
     };

@@ -99,14 +99,14 @@ Benchmark results on this machine (all timings are per-iteration):
 
 | Operation               | postgress-rs | PostgreSQL 18 |
 |-------------------------|-------------|---------------|
-| Insert 1,000 rows       | 9.52 ms     | 90.03 ms *    |
-| Insert 10,000 rows (bulk)| 93.06 ms   | 90.03 ms *    |
-| SELECT * (1k rows)      | 1.12 ms     | 0.101 ms **   |
-| SELECT WHERE (1k rows)  | 1.10 ms     | 2.11 ms       |
+| Insert 1,000 rows       | 9.18 ms     | 89.47 ms *    |
+| Insert 10,000 rows (bulk)| 92.82 ms   | 89.47 ms *    |
+| SELECT * (1k rows)      | 1.11 ms     | 0.096 ms **   |
+| SELECT WHERE (1k rows)  | 1.10 ms     | 2.00 ms       |
 | Parse & Plan            | 3.22 µs     | --            |
-| Full pipeline (scan, filter, sort, limit) | 1.10 ms | 1.34 ms |
-| Concurrent reads (4 tasks) | 2.27 ms  | --            |
-| Mixed workload (100 ops) | 15.15 ms   | --            |
+| Full pipeline (scan, filter, sort, limit) | 1.10 ms | 1.50 ms |
+| Concurrent reads (4 tasks) | 2.22 ms  | --            |
+| Mixed workload (100 ops) | 19.72 ms   | --            |
 
 \* PostgreSQL bulk INSERT is per-batch (1,000 rows), not per-row.
 \** PostgreSQL single-row SELECT by primary key (index scan).
@@ -120,7 +120,8 @@ Notes:
 ### Optimization history
 
 Changes made to improve performance:
-- **Index scan wiring** (`executor/select/context.rs`): `resolve_table_ref` now extracts equality conditions from WHERE clauses and uses B-tree index lookups when an index exists on the filtered column, avoiding full table scans for PK lookups.
+- **Batch page fetch** (`buffer_cache/mod.rs`): `fetch_pages_batch` fetches all pages with a single pool lock, eliminating per-page double-lock + double-clone overhead. Heap scans now do one clone per page instead of two.
+- **Index scan wiring** (`executor/select/context.rs`): `resolve_table_ref` extracts equality conditions from WHERE clauses and uses B-tree index lookups when an index exists on the filtered column.
 - **WAL segment rollover** (`wal/mod.rs`): Fixed WAL to pad to the next segment when a record doesn't fit, instead of panicking.
 
 ### Running the benchmarks

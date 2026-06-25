@@ -72,17 +72,14 @@ impl<'a> ExecContext<'a> {
                 if let Some(where_expr) = where_clause {
                     if let Some((col_name, value_str)) = Self::extract_equality(where_expr) {
                         let col_upper = col_uppercase(&col_name);
-                        if let Some(idx) = self.catalog.find_index(
-                            crate::types::Oid(rel_oid),
-                            &col_upper,
-                        ) {
+                        if let Some(idx) = self
+                            .catalog
+                            .find_index(crate::types::Oid(rel_oid), &col_upper)
+                        {
                             if idx.root_page != PageId::default() {
-                                return self.index_scan_lookup(
-                                    rel_oid,
-                                    &idx,
-                                    &col_name,
-                                    &value_str,
-                                ).await;
+                                return self
+                                    .index_scan_lookup(rel_oid, &idx, &col_name, &value_str)
+                                    .await;
                             }
                         }
                     }
@@ -200,20 +197,23 @@ impl<'a> ExecContext<'a> {
         page_id: PageId,
         offset: u16,
     ) -> anyhow::Result<Option<(ItemPointerData, Row)>> {
-        let state = self.cache
+        let state = self
+            .cache
             .get_relation_state(Oid(rel_oid))
             .ok_or_else(|| anyhow::anyhow!("Relation not found"))?;
         let rel_state = state.lock();
         let rel = &rel_state.relation;
 
         let page_data = self.cache.fetch_page(page_id)?;
-        let page = page_data.lock();
-        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page.data);
+        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
 
-        let snapshot = self.snapshot.clone().unwrap_or(crate::transaction::Snapshot {
-            xid: crate::transaction::TransactionId(u32::MAX),
-            active_xids: vec![],
-        });
+        let snapshot = self
+            .snapshot
+            .clone()
+            .unwrap_or(crate::transaction::Snapshot {
+                xid: crate::transaction::TransactionId(u32::MAX),
+                active_xids: vec![],
+            });
 
         if (offset as usize) < heap_page.tuples.len() {
             let tuple_data = &heap_page.tuples[offset as usize];
@@ -257,7 +257,10 @@ impl<'a> ExecContext<'a> {
 
         let mut results = Vec::with_capacity(hits.len());
         for (_key, (page_id, offset)) in hits {
-            if let Some(row) = self.fetch_tuple_by_pointer(rel_oid, page_id, offset).await? {
+            if let Some(row) = self
+                .fetch_tuple_by_pointer(rel_oid, page_id, offset)
+                .await?
+            {
                 results.push(row);
             }
         }

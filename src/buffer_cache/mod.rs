@@ -91,6 +91,8 @@ impl BufferPool {
         }
     }
 
+    /// Fetch a page into the pool. Returns a slot index; call `with_buffer` to access data.
+    /// The pool lock is released after this call, so callers can iterate without deadlocking.
     pub fn fetch_page(&self, storage: &dyn StorageTrait, page_id: PageId) -> anyhow::Result<usize> {
         let map = self.page_map.lock();
         if let Some(&idx) = map.get(&page_id) {
@@ -122,6 +124,11 @@ impl BufferPool {
         let mut map = self.page_map.lock();
         map.insert(page_id, slot);
         Ok(slot)
+    }
+
+    /// Lock the buffer pool and return the MutexGuard for direct buffer access.
+    pub fn lock_pool(&self) -> parking_lot::MutexGuard<'_, Vec<Buffer>> {
+        self.buffers.lock()
     }
 
     pub fn pin_page(&self, page_id: PageId) -> Option<usize> {
@@ -293,21 +300,27 @@ impl SharedBufferCache {
         rels.remove(&rel_oid);
     }
 
-    pub fn fetch_page(
-        &self,
-        page_id: crate::types::PageId,
-    ) -> anyhow::Result<std::sync::Arc<parking_lot::Mutex<Buffer>>> {
+    pub fn fetch_page(&self, page_id: crate::types::PageId) -> anyhow::Result<Vec<u8>> {
         let idx = self.pool.fetch_page(&*self.storage, page_id)?;
         let buffers = self.pool.buffers.lock();
-        let buffer = &buffers[idx];
-        let data = std::sync::Arc::new(parking_lot::Mutex::new(Buffer {
-            page_id: buffer.page_id,
-            data: buffer.data.clone(),
-            is_dirty: buffer.is_dirty,
-            usage_count: buffer.usage_count,
-            pin_count: buffer.pin_count,
-        }));
-        Ok(data)
+        Ok(buffers[idx].data.clone())
+    }
+
+    /// Fetch multiple pages with a single pool lock — one clone per page instead of two.
+    pub fn fetch_pages_batch(
+        &self,
+        page_ids: &[crate::types::PageId],
+    ) -> anyhow::Result<Vec<(crate::types::PageId, Vec<u8>)>> {
+        let mut indices = Vec::with_capacity(page_ids.len());
+        for &pid in page_ids {
+            let idx = self.pool.fetch_page(&*self.storage, pid)?;
+            indices.push((pid, idx));
+        }
+        let buffers = self.pool.buffers.lock();
+        Ok(indices
+            .into_iter()
+            .map(|(pid, idx)| (pid, buffers[idx].data.clone()))
+            .collect())
     }
 
     /// Remove a page from the buffer pool so subsequent fetches re-read from storage.

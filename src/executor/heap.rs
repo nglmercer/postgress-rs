@@ -180,11 +180,13 @@ pub async fn heap_scan_with_optional_snapshot(
     };
     let snap = snapshot.unwrap_or(&default_snapshot);
 
+    // Batch-fetch all pages with a single pool lock (one clone per page, not two)
+    let page_ids: Vec<crate::types::PageId> = rel.pages.to_vec();
+    let pages = cache.fetch_pages_batch(&page_ids)?;
+
     let mut rows = Vec::new();
-    for &page_id in rel.pages.iter() {
-        let page_data = cache.fetch_page(page_id)?;
-        let page = page_data.lock();
-        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page.data);
+    for (page_id, page_data) in pages {
+        let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
 
         for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
             if let Ok(tup) = bincode::deserialize::<Tuple>(tuple_data) {
@@ -214,10 +216,12 @@ pub async fn heap_scan_with_snapshot(
     let rel_state = state.lock();
     let rel = &rel_state.relation;
 
+    // Batch-fetch all pages with a single pool lock
+    let page_ids: Vec<crate::types::PageId> = rel.pages.to_vec();
+    let pages = cache.fetch_pages_batch(&page_ids)?;
+
     let mut rows = Vec::new();
-    for &page_id in rel.pages.iter() {
-        // Use scan_read_page (direct storage read, no pool, no 8KB clone)
-        let page_data = cache.scan_read_page(page_id)?;
+    for (page_id, page_data) in pages {
         let heap_page = crate::storage::heap_page::HeapPage::deserialize(&page_data);
 
         for (slot_idx, tuple_data) in heap_page.tuples.iter().enumerate() {
