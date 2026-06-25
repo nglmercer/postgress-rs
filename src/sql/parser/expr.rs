@@ -623,8 +623,9 @@ impl Parser {
                     }
                     _ => anyhow::bail!("expected date part in EXTRACT"),
                 };
-                let field = DatePart::from_str(&field_str)
-                    .ok_or_else(|| anyhow::anyhow!("unknown date part: {}", field_str))?;
+                let field = field_str
+                    .parse::<DatePart>()
+                    .map_err(|_| anyhow::anyhow!("unknown date part: {}", field_str))?;
                 self.expect_keyword("FROM")?;
                 let from = self.parse_expr()?;
                 self.expect(&Token::RParen)?;
@@ -654,8 +655,9 @@ impl Parser {
                     }
                     _ => anyhow::bail!("expected date part in DATE_TRUNC"),
                 };
-                let field = DatePart::from_str(&field_str)
-                    .ok_or_else(|| anyhow::anyhow!("unknown date part: {}", field_str))?;
+                let field = field_str
+                    .parse::<DatePart>()
+                    .map_err(|_| anyhow::anyhow!("unknown date part: {}", field_str))?;
                 self.expect(&Token::Comma)?;
                 let source = self.parse_expr()?;
                 let zone = if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "AT") {
@@ -694,8 +696,9 @@ impl Parser {
                     }
                     _ => anyhow::bail!("expected date part in DATE_PART"),
                 };
-                let field = DatePart::from_str(&field_str)
-                    .ok_or_else(|| anyhow::anyhow!("unknown date part: {}", field_str))?;
+                let field = field_str
+                    .parse::<DatePart>()
+                    .map_err(|_| anyhow::anyhow!("unknown date part: {}", field_str))?;
                 self.expect(&Token::Comma)?;
                 let from = self.parse_expr()?;
                 self.expect(&Token::RParen)?;

@@ -656,6 +656,8 @@ pub enum Literal {
     Hex(String),
 }
 
+use std::str::FromStr;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DatePart {
     Year,
@@ -678,28 +680,30 @@ pub enum DatePart {
     TimezoneMinute,
 }
 
-impl DatePart {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for DatePart {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "YEAR" | "YEARS" => Some(DatePart::Year),
-            "MONTH" | "MONTHS" => Some(DatePart::Month),
-            "DAY" | "DAYS" => Some(DatePart::Day),
-            "HOUR" | "HOURS" => Some(DatePart::Hour),
-            "MINUTE" | "MINUTES" => Some(DatePart::Minute),
-            "SECOND" | "SECONDS" => Some(DatePart::Second),
-            "MILLISECOND" | "MILLISECONDS" => Some(DatePart::Millisecond),
-            "MICROSECOND" | "MICROSECONDS" => Some(DatePart::Microsecond),
-            "DOW" => Some(DatePart::Dow),
-            "DOY" => Some(DatePart::Doy),
-            "ISODOW" => Some(DatePart::IsoDow),
-            "WEEK" | "WEEKS" => Some(DatePart::Week),
-            "QUARTER" | "QUARTERS" => Some(DatePart::Quarter),
-            "EPOCH" => Some(DatePart::Epoch),
-            "ISOYEAR" => Some(DatePart::IsoYear),
-            "TIMEZONE" => Some(DatePart::Timezone),
-            "TIMEZONE_HOUR" => Some(DatePart::TimezoneHour),
-            "TIMEZONE_MINUTE" => Some(DatePart::TimezoneMinute),
-            _ => None,
+            "YEAR" | "YEARS" => Ok(DatePart::Year),
+            "MONTH" | "MONTHS" => Ok(DatePart::Month),
+            "DAY" | "DAYS" => Ok(DatePart::Day),
+            "HOUR" | "HOURS" => Ok(DatePart::Hour),
+            "MINUTE" | "MINUTES" => Ok(DatePart::Minute),
+            "SECOND" | "SECONDS" => Ok(DatePart::Second),
+            "MILLISECOND" | "MILLISECONDS" => Ok(DatePart::Millisecond),
+            "MICROSECOND" | "MICROSECONDS" => Ok(DatePart::Microsecond),
+            "DOW" => Ok(DatePart::Dow),
+            "DOY" => Ok(DatePart::Doy),
+            "ISODOW" => Ok(DatePart::IsoDow),
+            "WEEK" | "WEEKS" => Ok(DatePart::Week),
+            "QUARTER" | "QUARTERS" => Ok(DatePart::Quarter),
+            "EPOCH" => Ok(DatePart::Epoch),
+            "ISOYEAR" => Ok(DatePart::IsoYear),
+            "TIMEZONE" => Ok(DatePart::Timezone),
+            "TIMEZONE_HOUR" => Ok(DatePart::TimezoneHour),
+            "TIMEZONE_MINUTE" => Ok(DatePart::TimezoneMinute),
+            _ => Err(()),
         }
     }
 }

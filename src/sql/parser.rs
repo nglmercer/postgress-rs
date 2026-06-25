@@ -124,9 +124,9 @@ impl Parser {
             self.expect_ident()?
         };
 
-        if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "TO") {
-            self.advance();
-        } else if matches!(self.peek(), Token::Eq) {
+        if matches!(self.peek(), Token::Keyword(k) if k.to_uppercase() == "TO")
+            || matches!(self.peek(), Token::Eq)
+        {
             self.advance();
         }
 
