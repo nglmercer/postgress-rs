@@ -1,8 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use postgress_rs::types::{Oid, PageId, Tuple};
-use postgress_rs::wal::{
-    compute_crc, CheckpointRecord, ControlFile, WALRecord, XLogRecord, WAL,
-};
+use postgress_rs::wal::{compute_crc, CheckpointRecord, ControlFile, WALRecord, XLogRecord, WAL};
 
 mod common;
 

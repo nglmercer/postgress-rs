@@ -322,16 +322,23 @@ impl WAL {
         let record_size = data.len() as u64;
 
         let mut lsn = self.current_lsn.lock().await;
-        let current = *lsn;
-        *lsn += record_size;
+        let mut current = *lsn;
+        let segment_size = self.segment_size as u64;
+
+        let offset_in_segment = current % segment_size;
+        if offset_in_segment + record_size > segment_size {
+            current += segment_size - offset_in_segment;
+        }
+
+        *lsn = current + record_size;
         drop(lsn);
 
-        let page_id = PageId((1 + (current / (self.segment_size as u64))) as u32);
+        let page_id = PageId((1 + (current / segment_size)) as u32);
         let mut page = self.storage.read_page(page_id)?;
-        let offset = (current % (self.segment_size as u64)) as usize;
-        if offset + data.len() > page.len() {
-            anyhow::bail!("WAL record too large for segment");
+        if page.len() < segment_size as usize {
+            page.resize(segment_size as usize, 0);
         }
+        let offset = (current % segment_size) as usize;
         page[offset..offset + data.len()].copy_from_slice(&data);
         self.storage.write_page(page_id, &page)?;
         Ok(current)

@@ -3,7 +3,7 @@
 use postgress_rs::buffer_cache::SharedBufferCache;
 use postgress_rs::catalog::Catalog;
 use postgress_rs::storage::ephemeral::EphemeralStorage;
-use postgress_rs::types::{Oid, Relation, TupleDesc, Attribute};
+use postgress_rs::types::{Attribute, Oid, Relation, TupleDesc};
 use std::sync::Arc;
 
 pub fn setup_storage() -> Arc<EphemeralStorage> {
@@ -31,7 +31,7 @@ pub fn create_test_table(catalog: &Catalog, name: &str, columns: Vec<(&str, Oid)
             })
             .collect(),
     };
-    
+
     let rel = Relation {
         rel_oid: Oid(0),
         name: name.to_string(),
@@ -41,16 +41,16 @@ pub fn create_test_table(catalog: &Catalog, name: &str, columns: Vec<(&str, Oid)
         reltuples: 0.0,
         relfrozenxid: 0,
     };
-    
+
     let oid = catalog.allocate_oid();
     let mut rel_with_oid = rel;
     rel_with_oid.rel_oid = oid;
-    
+
     let catalog_clone = catalog;
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         catalog_clone.create_relation(rel_with_oid).await.unwrap();
     });
-    
+
     oid
 }
 
@@ -60,25 +60,30 @@ pub fn insert_test_data(cache: &SharedBufferCache, _catalog: &Catalog, rel_oid: 
         let rel_state = state.lock();
         rel_state.relation.clone()
     };
-    
+
     let runtime = tokio::runtime::Runtime::new().unwrap();
     for i in 0..count {
-        let values: Vec<String> = rel.tuple_desc.fields.iter().map(|attr| {
-            match attr.type_oid.0 {
+        let values: Vec<String> = rel
+            .tuple_desc
+            .fields
+            .iter()
+            .map(|attr| match attr.type_oid.0 {
                 23 => i.to_string(),
                 25 => format!("value_{}", i),
                 _ => format!("val_{}", i),
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         let insert_op = postgress_rs::executor::heap::TupleInsert {
             rel_oid,
             values: values.iter().map(|v| v.as_bytes().to_vec()).collect(),
         };
-        
+
         runtime.block_on(async {
             let wal = postgress_rs::wal::WAL::new(65536);
-            postgress_rs::executor::heap::tuple_insert(cache, &wal, &insert_op).await.unwrap();
+            postgress_rs::executor::heap::tuple_insert(cache, &wal, &insert_op)
+                .await
+                .unwrap();
         });
     }
 }

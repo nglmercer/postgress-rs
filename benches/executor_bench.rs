@@ -8,31 +8,38 @@ use std::sync::Arc;
 
 mod common;
 
-fn setup_benchmark() -> (Arc<EphemeralStorage>, Arc<SharedBufferCache>, Arc<Catalog>, Oid) {
+fn setup_benchmark() -> (
+    Arc<EphemeralStorage>,
+    Arc<SharedBufferCache>,
+    Arc<Catalog>,
+    Oid,
+) {
     let storage = common::setup_storage();
     let cache = common::setup_cache(&storage);
     let catalog = common::setup_catalog(&storage);
-    
-    let rel_oid = common::create_test_table(&catalog, "bench_users", vec![
-        ("id", Oid(23)),
-        ("name", Oid(25)),
-        ("value", Oid(23)),
-    ]);
+
+    let rel_oid = common::create_test_table(
+        &catalog,
+        "bench_users",
+        vec![("id", Oid(23)), ("name", Oid(25)), ("value", Oid(23))],
+    );
     cache.sync_from_catalog(&catalog);
 
     common::insert_test_data(&cache, &catalog, rel_oid, 1000);
-    
+
     (storage, cache, catalog, rel_oid)
 }
 
 fn bench_seq_scan_1000(c: &mut Criterion) {
     let (_storage, cache, _catalog, rel_oid) = setup_benchmark();
-    
+
     c.bench_function("seq_scan_1000", |b| {
         b.iter(|| {
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime.block_on(async {
-                postgress_rs::executor::heap::heap_scan(&cache, rel_oid.0).await.unwrap()
+                postgress_rs::executor::heap::heap_scan(&cache, rel_oid.0)
+                    .await
+                    .unwrap()
             })
         })
     });
@@ -40,7 +47,7 @@ fn bench_seq_scan_1000(c: &mut Criterion) {
 
 fn bench_insert_single(c: &mut Criterion) {
     let (_storage, cache, _catalog, rel_oid) = setup_benchmark();
-    
+
     c.bench_function("insert_single", |b| {
         b.iter(|| {
             let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -50,7 +57,9 @@ fn bench_insert_single(c: &mut Criterion) {
                     rel_oid,
                     values: vec![b"test".to_vec(), b"value".to_vec()],
                 };
-                postgress_rs::executor::heap::tuple_insert(&cache, &wal, &insert_op).await.unwrap();
+                postgress_rs::executor::heap::tuple_insert(&cache, &wal, &insert_op)
+                    .await
+                    .unwrap();
             })
         })
     });
@@ -61,12 +70,8 @@ fn bench_heap_page_serialize(c: &mut Criterion) {
     for i in 0..50 {
         page.add_tuple(&bincode::serialize(&format!("tuple_{}", i)).unwrap());
     }
-    
-    c.bench_function("heap_page_serialize", |b| {
-        b.iter(|| {
-            page.serialize()
-        })
-    });
+
+    c.bench_function("heap_page_serialize", |b| b.iter(|| page.serialize()));
 }
 
 fn bench_heap_page_deserialize(c: &mut Criterion) {
@@ -75,11 +80,9 @@ fn bench_heap_page_deserialize(c: &mut Criterion) {
         page.add_tuple(&bincode::serialize(&format!("tuple_{}", i)).unwrap());
     }
     let data = page.serialize();
-    
+
     c.bench_function("heap_page_deserialize", |b| {
-        b.iter(|| {
-            postgress_rs::storage::heap_page::HeapPage::deserialize(&data)
-        })
+        b.iter(|| postgress_rs::storage::heap_page::HeapPage::deserialize(&data))
     });
 }
 
@@ -93,11 +96,9 @@ fn bench_tuple_serialize(c: &mut Criterion) {
         cmax: 0,
         xvac: 0,
     };
-    
+
     c.bench_function("tuple_serialize", |b| {
-        b.iter(|| {
-            bincode::serialize(&tuple).unwrap()
-        })
+        b.iter(|| bincode::serialize(&tuple).unwrap())
     });
 }
 
@@ -112,33 +113,33 @@ fn bench_tuple_deserialize(c: &mut Criterion) {
         xvac: 0,
     };
     let data = bincode::serialize(&tuple).unwrap();
-    
+
     c.bench_function("tuple_deserialize", |b| {
-        b.iter(|| {
-            bincode::deserialize::<postgress_rs::types::Tuple>(&data).unwrap()
-        })
+        b.iter(|| bincode::deserialize::<postgress_rs::types::Tuple>(&data).unwrap())
     });
 }
 
 fn bench_ephemeral_read(c: &mut Criterion) {
     let storage = common::setup_storage();
     let page_data = vec![42u8; 8192];
-    storage.write_page(postgress_rs::types::PageId(1), &page_data).unwrap();
-    
+    storage
+        .write_page(postgress_rs::types::PageId(1), &page_data)
+        .unwrap();
+
     c.bench_function("ephemeral_read_page", |b| {
-        b.iter(|| {
-            storage.read_page(postgress_rs::types::PageId(1)).unwrap()
-        })
+        b.iter(|| storage.read_page(postgress_rs::types::PageId(1)).unwrap())
     });
 }
 
 fn bench_ephemeral_write(c: &mut Criterion) {
     let storage = common::setup_storage();
     let page_data = vec![42u8; 8192];
-    
+
     c.bench_function("ephemeral_write_page", |b| {
         b.iter(|| {
-            storage.write_page(postgress_rs::types::PageId(1), &page_data).unwrap()
+            storage
+                .write_page(postgress_rs::types::PageId(1), &page_data)
+                .unwrap()
         })
     });
 }

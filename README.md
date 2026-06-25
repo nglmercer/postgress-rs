@@ -93,6 +93,33 @@ Requires Rust 2021 edition or later.
 cargo build --release
 ```
 
+## Benchmark Results
+
+Benchmark results on this machine (all timings are per-iteration):
+
+| Benchmark               | postgress-rs |
+|-------------------------|-------------|
+| Insert 1,000 rows       | 8.84 ms     |
+| Insert 10,000 rows (bulk)| 89.46 ms   |
+| SELECT * (1k rows)      | 1.06 ms     |
+| SELECT WHERE (1k rows)  | 1.04 ms     |
+| Parse & Plan            | 3.57 µs     |
+| Full pipeline (scan, filter, sort, limit) | 1.05 ms |
+| Concurrent reads (4 tasks) | 2.30 ms  |
+| Mixed workload (100 ops) | 14.30 ms   |
+
+### Running the benchmarks
+
+```bash
+# Criterion benchmarks
+cargo bench
+
+# Compare against a real PostgreSQL instance
+cargo run --bin pg_compare
+```
+
+The `pg_compare` binary connects to a local PostgreSQL instance (`localhost:5432`, user `postgres`) and runs equivalent queries for comparison.
+
 ## License
 
 Educational project -- no license specified.

@@ -216,8 +216,8 @@ fn bench_insert_bulk(client: &mut Client) {
                         &format!("bulk_user_{}", i),
                         &format!("bulk{}@test.com", i),
                         &i,
-                ],
-            )
+                    ],
+                )
                 .unwrap();
         }
         transaction.commit().unwrap();

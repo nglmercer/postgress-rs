@@ -118,7 +118,10 @@ fn bench_e2e_select_where(c: &mut Criterion) {
 fn bench_e2e_parse_and_plan(c: &mut Criterion) {
     c.bench_function("e2e_parse_and_plan", |b| {
         b.iter(|| {
-            postgress_rs::sql::Parser::parse("SELECT id, name FROM users WHERE id > 100 ORDER BY name LIMIT 10").unwrap()
+            postgress_rs::sql::Parser::parse(
+                "SELECT id, name FROM users WHERE id > 100 ORDER BY name LIMIT 10",
+            )
+            .unwrap()
         })
     });
 }
