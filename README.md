@@ -97,16 +97,31 @@ cargo build --release
 
 Benchmark results on this machine (all timings are per-iteration):
 
-| Benchmark               | postgress-rs |
-|-------------------------|-------------|
-| Insert 1,000 rows       | 8.84 ms     |
-| Insert 10,000 rows (bulk)| 89.46 ms   |
-| SELECT * (1k rows)      | 1.06 ms     |
-| SELECT WHERE (1k rows)  | 1.04 ms     |
-| Parse & Plan            | 3.57 µs     |
-| Full pipeline (scan, filter, sort, limit) | 1.05 ms |
-| Concurrent reads (4 tasks) | 2.30 ms  |
-| Mixed workload (100 ops) | 14.30 ms   |
+| Operation               | postgress-rs | PostgreSQL 18 |
+|-------------------------|-------------|---------------|
+| Insert 1,000 rows       | 9.52 ms     | 90.03 ms *    |
+| Insert 10,000 rows (bulk)| 93.06 ms   | 90.03 ms *    |
+| SELECT * (1k rows)      | 1.12 ms     | 0.101 ms **   |
+| SELECT WHERE (1k rows)  | 1.10 ms     | 2.11 ms       |
+| Parse & Plan            | 3.22 µs     | --            |
+| Full pipeline (scan, filter, sort, limit) | 1.10 ms | 1.34 ms |
+| Concurrent reads (4 tasks) | 2.27 ms  | --            |
+| Mixed workload (100 ops) | 15.15 ms   | --            |
+
+\* PostgreSQL bulk INSERT is per-batch (1,000 rows), not per-row.
+\** PostgreSQL single-row SELECT by primary key (index scan).
+
+Notes:
+- PostgreSQL benchmarks run via `pg_compare` against a local instance on the same machine.
+- postgress-rs benchmarks are in-process with no network overhead.
+- PostgreSQL has decades of optimization, JIT compilation, and parallel query support.
+- postgress-rs is an educational reimplementation — expect lower throughput on complex workloads.
+
+### Optimization history
+
+Changes made to improve performance:
+- **Index scan wiring** (`executor/select/context.rs`): `resolve_table_ref` now extracts equality conditions from WHERE clauses and uses B-tree index lookups when an index exists on the filtered column, avoiding full table scans for PK lookups.
+- **WAL segment rollover** (`wal/mod.rs`): Fixed WAL to pad to the next segment when a record doesn't fit, instead of panicking.
 
 ### Running the benchmarks
 

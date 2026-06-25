@@ -58,7 +58,7 @@ fn setup_tables(client: &mut Client) {
             "CREATE TABLE bench_orders (
         id SERIAL PRIMARY KEY,
         user_id INTEGER REFERENCES bench_users(id),
-        amount DECIMAL(10,2),
+        amount DOUBLE PRECISION,
         created_at TIMESTAMP DEFAULT NOW()
     )",
             &[],
@@ -80,7 +80,7 @@ fn setup_tables(client: &mut Client) {
 
     for i in 0..10000 {
         let user_id = (i % 10000) + 1;
-        let amount = format!("{:.2}", (i as f64) * 1.5);
+        let amount: f64 = (i as f64) * 1.5;
         client
             .execute(
                 "INSERT INTO bench_orders (user_id, amount) VALUES ($1, $2)",
