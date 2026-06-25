@@ -64,7 +64,7 @@ pub async fn handle_connection(
     catalog: Arc<Catalog>,
     wal: Arc<tokio::sync::Mutex<WAL>>,
     txn_mgr: Arc<TransactionManager>,
-    lock_mgr: Arc<crate::transaction::locks::LockManager>,
+    _lock_mgr: Arc<crate::transaction::locks::LockManager>,
 ) -> anyhow::Result<()> {
     let mut parser = Parser::new();
     let mut buf = vec![0u8; 8192];
@@ -203,12 +203,8 @@ pub async fn handle_connection(
                             .write_all(&encode(BackendMessage::ReadyForQuery { status: tx_status }))
                             .await;
                     }
-                    FrontendMessage::Describe { kind, name: _ } => {
-                        if kind == b'S' {
-                            let _ = socket.write_all(&encode(BackendMessage::NoData)).await;
-                        } else {
-                            let _ = socket.write_all(&encode(BackendMessage::NoData)).await;
-                        }
+                    FrontendMessage::Describe { kind: _, name: _ } => {
+                        let _ = socket.write_all(&encode(BackendMessage::NoData)).await;
                     }
                     FrontendMessage::Close { kind, name } => {
                         if kind == b'S' {

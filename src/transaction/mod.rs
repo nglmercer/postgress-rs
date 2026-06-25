@@ -89,6 +89,12 @@ pub struct TransactionManager {
     active: RwLock<HashMap<TransactionId, Transaction>>,
 }
 
+impl Default for TransactionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransactionManager {
     pub fn new() -> Self {
         Self {

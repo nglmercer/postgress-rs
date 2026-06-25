@@ -96,19 +96,19 @@ impl AutovacuumDaemon {
 
     pub fn compute_vacuum_decision(&self, rel_oid: Oid) -> VacuumDecision {
         let stats = self.table_stats.get(&rel_oid);
-        let should_vacuum = stats.map_or(false, |s| {
+        let should_vacuum = stats.is_some_and(|s| {
             let dominated = s.dead_ratio() > self.config.vacuum_threshold;
             let timed_out = s
                 .last_vacuum
-                .map_or(true, |t| t.elapsed() > self.config.naptime);
+                .is_none_or(|t| t.elapsed() > self.config.naptime);
             dominated && timed_out
         });
 
-        let should_analyze = stats.map_or(false, |s| {
+        let should_analyze = stats.is_some_and(|s| {
             let dominated = s.dead_ratio() > self.config.analyze_threshold;
             let timed_out = s
                 .last_analyze
-                .map_or(true, |t| t.elapsed() > self.config.naptime);
+                .is_none_or(|t| t.elapsed() > self.config.naptime);
             dominated && timed_out
         });
 

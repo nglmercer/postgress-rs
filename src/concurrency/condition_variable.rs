@@ -45,7 +45,7 @@ mod tests {
         let cv = Arc::new(ConditionVariable::new());
         let cv_clone = Arc::clone(&cv);
 
-        let handle = tokio::spawn(async move {
+        let _handle = tokio::spawn(async move {
             let latch = Latch::new();
             cv_clone.wait(&latch).await;
             true
@@ -63,13 +63,13 @@ mod tests {
         let cv1 = Arc::clone(&cv);
         let cv2 = Arc::clone(&cv);
 
-        let handle1 = tokio::spawn(async move {
+        let _handle1 = tokio::spawn(async move {
             let latch = Latch::new();
             cv1.wait(&latch).await;
             true
         });
 
-        let handle2 = tokio::spawn(async move {
+        let _handle2 = tokio::spawn(async move {
             let latch = Latch::new();
             cv2.wait(&latch).await;
             true

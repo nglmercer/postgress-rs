@@ -112,6 +112,12 @@ struct AdvisoryLockEntry {
     mode: AdvisoryLockMode,
 }
 
+impl Default for LockManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LockManager {
     pub fn new() -> Self {
         Self {
@@ -129,7 +135,7 @@ impl LockManager {
         mode: LockMode,
     ) -> anyhow::Result<()> {
         let mut table_locks = self.table_locks.lock();
-        let locks = table_locks.entry(relation_oid).or_insert_with(Vec::new);
+        let locks = table_locks.entry(relation_oid).or_default();
 
         // Check for conflicts with existing locks
         for existing in locks.iter() {
@@ -175,7 +181,7 @@ impl LockManager {
     ) -> anyhow::Result<()> {
         let mut row_locks = self.row_locks.lock();
         let key = (relation_oid, page_id, tuple_offset);
-        let locks = row_locks.entry(key).or_insert_with(Vec::new);
+        let locks = row_locks.entry(key).or_default();
 
         // Check for conflicts
         for existing in locks.iter() {

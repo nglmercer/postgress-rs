@@ -126,12 +126,11 @@ impl BufferPool {
 
     pub fn pin_page(&self, page_id: PageId) -> Option<usize> {
         let map = self.page_map.lock();
-        map.get(&page_id).copied().map(|idx| {
+        map.get(&page_id).copied().inspect(|&idx| {
             drop(map);
             let mut buffers = self.buffers.lock();
             buffers[idx].pin_count += 1;
             buffers[idx].usage_count += 1;
-            idx
         })
     }
 
@@ -330,7 +329,7 @@ impl SharedBufferCache {
     pub fn flush_dirty_pages(&self) -> anyhow::Result<u64> {
         let map = self.pool.page_map.lock().clone();
         let mut flushed = 0u64;
-        for (page_id, _) in &map {
+        for page_id in map.keys() {
             let buffers = self.pool.buffers.lock();
             let dirty = map
                 .get(page_id)
