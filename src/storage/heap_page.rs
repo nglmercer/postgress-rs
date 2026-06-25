@@ -18,6 +18,12 @@ pub struct PageHeader {
     pub pd_prune_xid: u32,
 }
 
+impl Default for PageHeader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PageHeader {
     pub fn new() -> Self {
         Self {
@@ -107,6 +113,12 @@ pub struct HeapPage {
     pub tuples: Vec<Vec<u8>>,
 }
 
+impl Default for HeapPage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HeapPage {
     pub fn new() -> Self {
         Self {
@@ -163,7 +175,7 @@ impl HeapPage {
         let header = PageHeader::deserialize(data);
 
         let num_line_pointers =
-            ((header.pd_lower as usize - PAGE_HEADER_SIZE) / LINE_POINTER_SIZE) as usize;
+            (header.pd_lower as usize - PAGE_HEADER_SIZE) / LINE_POINTER_SIZE;
         let mut line_pointers = Vec::with_capacity(num_line_pointers);
 
         for i in 0..num_line_pointers {
@@ -263,11 +275,10 @@ impl HeapPage {
 
         let mut total_len = 0;
         for i in 0..self.line_pointers.len() {
-            if self.line_pointers[i].lp_flags == LP_NORMAL {
-                if i < self.tuples.len() {
+            if self.line_pointers[i].lp_flags == LP_NORMAL
+                && i < self.tuples.len() {
                     total_len += self.tuples[i].len();
                 }
-            }
         }
         self.header.pd_upper = (PAGE_SIZE - total_len) as u16;
     }
@@ -430,8 +441,8 @@ mod tests {
     #[test]
     fn test_heap_page_roundtrip() {
         let mut page = HeapPage::new();
-        page.add_tuple(&vec![1, 2, 3]);
-        page.add_tuple(&vec![4, 5, 6]);
+        page.add_tuple(&[1, 2, 3]);
+        page.add_tuple(&[4, 5, 6]);
 
         let serialized = page.serialize();
         let deserialized = HeapPage::deserialize(&serialized);
@@ -442,9 +453,9 @@ mod tests {
     #[test]
     fn test_heap_page_compaction_and_reuse() {
         let mut page = HeapPage::new();
-        let s0 = page.add_tuple(&vec![1, 1, 1]).unwrap();
-        let s1 = page.add_tuple(&vec![2, 2, 2]).unwrap();
-        let s2 = page.add_tuple(&vec![3, 3, 3]).unwrap();
+        let _s0 = page.add_tuple(&[1, 1, 1]).unwrap();
+        let s1 = page.add_tuple(&[2, 2, 2]).unwrap();
+        let _s2 = page.add_tuple(&[3, 3, 3]).unwrap();
 
         let free_before = page.free_space();
 
@@ -470,9 +481,9 @@ mod tests {
     #[test]
     fn test_heap_page_prune() {
         let mut page = HeapPage::new();
-        page.add_tuple(&vec![0u8; 32]);
-        page.add_tuple(&vec![0u8; 32]);
-        page.add_tuple(&vec![0u8; 32]);
+        page.add_tuple(&[0u8; 32]);
+        page.add_tuple(&[0u8; 32]);
+        page.add_tuple(&[0u8; 32]);
 
         // Mark s1 xmax as 100 (below cutoff)
         let tuple_data = &mut page.tuples[1];
@@ -488,10 +499,10 @@ mod tests {
     #[test]
     fn test_hot_update() {
         let mut page = HeapPage::new();
-        let s0 = page.add_tuple(&vec![1, 1, 1]).unwrap();
+        let s0 = page.add_tuple(&[1, 1, 1]).unwrap();
 
         // HOT update: old slot gets LP_REDIRECT, new tuple appended
-        let new_slot = page.hot_update(s0, &vec![2, 2, 2, 2]);
+        let new_slot = page.hot_update(s0, &[2, 2, 2, 2]);
         assert!(new_slot.is_some());
         let new_slot = new_slot.unwrap();
         assert_eq!(page.line_pointers[s0 as usize].lp_flags, LP_REDIRECT);
@@ -502,10 +513,10 @@ mod tests {
     #[test]
     fn test_follow_chain() {
         let mut page = HeapPage::new();
-        let s0 = page.add_tuple(&vec![1, 1, 1]).unwrap();
-        let _s1 = page.add_tuple(&vec![2, 2, 2]).unwrap();
+        let s0 = page.add_tuple(&[1, 1, 1]).unwrap();
+        let _s1 = page.add_tuple(&[2, 2, 2]).unwrap();
 
-        page.hot_update(s0, &vec![3, 3, 3, 3]);
+        page.hot_update(s0, &[3, 3, 3, 3]);
 
         // Follow chain from s0 -> should find the new slot
         let final_slot = page.follow_chain(s0);

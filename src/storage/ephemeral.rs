@@ -7,6 +7,12 @@ pub struct EphemeralStorage {
     pages: RwLock<HashMap<PageId, Vec<u8>>>,
 }
 
+impl Default for EphemeralStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EphemeralStorage {
     pub fn new() -> Self {
         Self {

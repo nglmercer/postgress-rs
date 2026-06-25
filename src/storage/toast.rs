@@ -25,7 +25,7 @@ impl ToastStorage {
             return None;
         }
 
-        let chunk_count = (data.len() + TOAST_MAX_CHUNK_SIZE - 1) / TOAST_MAX_CHUNK_SIZE;
+        let chunk_count = data.len().div_ceil(TOAST_MAX_CHUNK_SIZE);
         let toast_table_oid = Oid(rel_oid.0.wrapping_add(1));
 
         let mut chunk_ids = Vec::with_capacity(chunk_count);

@@ -9,7 +9,7 @@ pub struct VisibilityMap {
 
 impl VisibilityMap {
     pub fn new(num_pages: u32) -> Self {
-        let bytes_needed = (num_pages + PAGES_PER_BYTE - 1) / PAGES_PER_BYTE;
+        let bytes_needed = num_pages.div_ceil(PAGES_PER_BYTE);
         Self {
             data: vec![0u8; bytes_needed as usize],
             num_pages,
