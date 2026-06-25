@@ -118,29 +118,29 @@ mod tests {
 
     #[test]
     fn test_slow_scan_filter_matching() {
-        let row = vec!["alice".to_string(), "30".to_string()];
+        let row = ["alice".to_string(), "30".to_string()];
         let filter = Filter {
             column: 0,
             value: b"alice".to_vec(),
         };
-        let filter_col = filter.column as usize;
+        let filter_col = filter.column;
         let expected = String::from_utf8_lossy(&filter.value);
         let matches =
-            row[filter_col].contains(&*expected) || row[filter_col] == expected.to_string();
+            row[filter_col].contains(&*expected) || row[filter_col] == expected;
         assert!(matches);
     }
 
     #[test]
     fn test_slow_scan_filter_not_matching() {
-        let row = vec!["bob".to_string(), "25".to_string()];
+        let row = ["bob".to_string(), "25".to_string()];
         let filter = Filter {
             column: 0,
             value: b"alice".to_vec(),
         };
-        let filter_col = filter.column as usize;
+        let filter_col = filter.column;
         let expected = String::from_utf8_lossy(&filter.value);
         let matches =
-            row[filter_col].contains(&*expected) || row[filter_col] == expected.to_string();
+            row[filter_col].contains(&*expected) || row[filter_col] == expected;
         assert!(!matches);
     }
 

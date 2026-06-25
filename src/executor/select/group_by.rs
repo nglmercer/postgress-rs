@@ -40,7 +40,7 @@ impl<'a> ExecContext<'a> {
                 expr, low, high, ..
             } => Self::expr_has_agg(expr) || Self::expr_has_agg(low) || Self::expr_has_agg(high),
             Expr::InList { expr, list, .. } => {
-                Self::expr_has_agg(expr) || list.iter().any(|e| Self::expr_has_agg(e))
+                Self::expr_has_agg(expr) || list.iter().any(Self::expr_has_agg)
             }
             _ => false,
         }

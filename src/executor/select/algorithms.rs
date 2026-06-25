@@ -51,12 +51,12 @@ pub fn hash_join(
                     for rrow in matching_rows {
                         let mut combined = lrow.clone();
                         combined.extend(rrow.iter().cloned());
-                        result.push((ltid.clone(), combined));
+                        result.push((*ltid, combined));
                     }
                 } else if matches!(join_type, JoinType::Left) {
                     let mut combined = lrow.clone();
                     combined.extend(vec!["".to_string(); right_col_count]);
-                    result.push((ltid.clone(), combined));
+                    result.push((*ltid, combined));
                 }
             }
         }
@@ -145,7 +145,7 @@ pub fn hash_join(
             if !matched {
                 let mut combined = lrow.clone();
                 combined.extend(vec!["".to_string(); right_col_count_inner]);
-                result.push((ltid.clone(), combined));
+                result.push((*ltid, combined));
             }
         }
     }
@@ -175,7 +175,7 @@ pub fn merge_join(
                 for (ltid, lrow) in left {
                     let mut combined = lrow.clone();
                     combined.extend(vec!["".to_string(); right_col_count]);
-                    result.push((ltid.clone(), combined));
+                    result.push((*ltid, combined));
                 }
             }
             JoinType::Right => {
@@ -183,7 +183,7 @@ pub fn merge_join(
                 for (rtid, rrow) in right {
                     let mut combined = vec!["".to_string(); left_col_count];
                     combined.extend(rrow.clone());
-                    result.push((rtid.clone(), combined));
+                    result.push((*rtid, combined));
                 }
             }
             JoinType::Full => {
@@ -191,12 +191,12 @@ pub fn merge_join(
                 for (ltid, lrow) in left {
                     let mut combined = lrow.clone();
                     combined.extend(vec!["".to_string(); right_col_count]);
-                    result.push((ltid.clone(), combined));
+                    result.push((*ltid, combined));
                 }
                 for (rtid, rrow) in right {
                     let mut combined = vec!["".to_string(); left_col_count];
                     combined.extend(rrow.clone());
-                    result.push((rtid.clone(), combined));
+                    result.push((*rtid, combined));
                 }
             }
             _ => {}
@@ -264,7 +264,7 @@ pub fn merge_join(
                     let (_rtid, rrow, _) = right_with_keys[k];
                     let mut combined = lrow.clone();
                     combined.extend(rrow.clone());
-                    result.push((ltid.clone(), combined));
+                    result.push((*ltid, combined));
                     right_matched[k] = true;
                     k += 1;
                 }
@@ -282,7 +282,7 @@ pub fn merge_join(
                 let (ltid, lrow, _) = left_with_keys[i];
                 let mut combined = lrow.clone();
                 combined.extend(vec!["".to_string(); right_col_count]);
-                result.push((ltid.clone(), combined));
+                result.push((*ltid, combined));
             }
             left_matched[i] = true;
             i += 1;
@@ -293,7 +293,7 @@ pub fn merge_join(
                 let left_col_count = left.first().map(|(_, l)| l.len()).unwrap_or(0);
                 let mut combined = vec!["".to_string(); left_col_count];
                 combined.extend(rrow.clone());
-                result.push((rtid.clone(), combined));
+                result.push((*rtid, combined));
             }
             right_matched[j] = true;
             j += 1;
@@ -307,7 +307,7 @@ pub fn merge_join(
                 let (ltid, lrow, _) = left_with_keys[i];
                 let mut combined = lrow.clone();
                 combined.extend(vec!["".to_string(); right_col_count]);
-                result.push((ltid.clone(), combined));
+                result.push((*ltid, combined));
             }
             i += 1;
         }
@@ -321,7 +321,7 @@ pub fn merge_join(
                 let left_col_count = left.first().map(|(_, l)| l.len()).unwrap_or(0);
                 let mut combined = vec!["".to_string(); left_col_count];
                 combined.extend(rrow.clone());
-                result.push((rtid.clone(), combined));
+                result.push((*rtid, combined));
             }
             j += 1;
         }
