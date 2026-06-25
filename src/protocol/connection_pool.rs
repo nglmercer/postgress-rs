@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 pub struct ConnectionPool {
     max_connections: usize,
     active_connections: Arc<Mutex<usize>>,
-    idle_connections: Arc<Mutex<VecDeque<()>>>,
+    _idle_connections: Arc<Mutex<VecDeque<()>>>,
 }
 
 impl ConnectionPool {
@@ -13,7 +13,7 @@ impl ConnectionPool {
         Self {
             max_connections,
             active_connections: Arc::new(Mutex::new(0)),
-            idle_connections: Arc::new(Mutex::new(VecDeque::new())),
+            _idle_connections: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
